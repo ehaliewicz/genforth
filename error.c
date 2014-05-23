@@ -9,13 +9,18 @@ u32 *stackPointer, *rStackPointer;
 u32 tosDump, torsDump;
 
 
-void printPtr(u32* ptr, int y) {
-  char str[9];
-  str[8] = '\0';
+void printPtr(u32* ptr, int y, int isPtr) {
+  char str[11];
+  str[10] = '\0';
   int lastLen;
-
-  intToHex((u32)ptr, str, 1);
-  VDP_drawText(str, 0, y);
+  
+  intToHex((u32)ptr, str, 8);
+  
+  // top of parameter stack isn't a ptr,
+  // as it's buffered in a register
+  if(isPtr) {
+    VDP_drawText(str, 0, y);
+  }
   lastLen = strlen(str);
   strclr(str);
     
@@ -23,7 +28,7 @@ void printPtr(u32* ptr, int y) {
   lastLen += 1;
     
   u32 hex = *ptr;
-  intToHex(hex, str, 1);
+  intToHex(hex, str, 8);
   VDP_drawText("0x",lastLen+1, y);
   VDP_drawText(str, lastLen+3, y);
   lastLen += (strlen(str)+3);
@@ -32,7 +37,7 @@ void printPtr(u32* ptr, int y) {
   strclr(str);
  
     
-  uintToStr(hex, str, 1);
+  uintToStr(hex, str, 10);
   VDP_drawText(", ", lastLen, y);
   VDP_drawText(str, lastLen+2, y);
   lastLen = lastLen+2+strlen(str);
@@ -55,44 +60,44 @@ void printPtr(u32* ptr, int y) {
     
 }
 
-void printStack(u32* sp, u32 tos, int y, char* stackName) {
+void printStack(u32* sp, u32 tos, int y, char* stackName, int topIsPtr) {
   
   
  
   
   VDP_drawText("Top of ", 0, y-1);
   VDP_drawText(stackName, 7, y-1);
-  printPtr(&tos, y);
+  printPtr(&tos, y, topIsPtr);
   y++;
   for(int i = 0; i < 9; i++) {
-    printPtr(sp, y);
+    printPtr(sp, y, 1);
     sp++;
     y++;
   }
   
 }
 
-void stackOverflowError(u32 tos, u32 tors, u32 *sp, u32 *rsp)
-{
+
+
+void stackError(char* errorMsg) {
   VDP_init();
-  VDP_drawText("STACK OVERFLOW!", 11, 0);
+  VDP_drawText(errorMsg, 9, 0);
   
   int y = 3;
-  printStack(stackPointer, tosDump, y, "param stack");
-  printStack(rStackPointer, torsDump, y+14, "return stack");
+  printStack(stackPointer, tosDump, y, "param stack", 0);
+  printStack(rStackPointer, torsDump, y+14, "return stack", 1);
   
   
-  while(1);
+  while(1);    
+}
+
+
+void stackOverflowError()
+{
+  stackError("STACK OVERFLOW!");
 }
 
 
 void stackUnderflowError() {
-  VDP_init();
-  VDP_drawText("STACK UNDERFLOW!", 9, 3);
-
-  int y = 3;
-  printStack(stackPointer, tosDump, y, "param stack");
-  printStack(rStackPointer, torsDump, y+14, "return stack");
-  
-  while(1);  
+  stackError("STACK UNDERFLOW!"); 
 }

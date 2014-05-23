@@ -75,8 +75,8 @@ back:
         jsr word
         jsr number
         jsr dot
+back2:          
         jsr dot
-back2:   
         jmp back2
 
 
