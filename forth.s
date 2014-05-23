@@ -1,16 +1,7 @@
-
-        
-  /*
-  * Title      :  MegaForth
-  * Written by :  Erik Haliewicz
-  * Date       :  Starting 05/16/2014
-  * Description:  Subroutine-threaded forth for the 68000
-  */
-        | .macro PUSH reg
-        | move.l %d0, -(%a6)
-        | move.l \reg, %d0
-        | .endm
-
+        | pushes a value onto the return stack
+        | which is buffered to have the top value in d0
+        | this macro also does bounds checking
+        | the stack grows down, so we use pre-decrement addressing
         .macro PUSH reg
         cmpa.l #ps_overflow, %a6
         blt stackOverflow
@@ -18,7 +9,10 @@
         move.l \reg, %d0
         .endm
 
-        
+        | same as above, but in the reverse order
+        | moves the top value of the stack in d0
+        | to the given register
+        | and pops the a6 register up by 4 bytes, placing what it previously pointed to in d0
         .macro POP reg
         cmpa.l #ps_end, %a6
         bgt stackUnderflow
@@ -26,12 +20,7 @@
         move.l (%a6)+, %d0
         .endm
 
-
-        /*      
-        return stack points at the current return address
-        and grows downward
-        */
-
+        | convenience macros for pushing and popping onto the native (return) stack
         .macro RPOP reg
         move.l (%a7)+, \reg
         .endm
@@ -46,38 +35,44 @@
         .globl main, get_line_of_input, buffer, bufftop, curkey
         .extern stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline
 
-main:   
+        | start of ROM
+main:
+        | well, we don't really need ROM yet so jump to RAM ;)
         jmp ram_start
         
 
 
+        
+
         .data
 ram_start:
-        | initialize I/O stuff
+        | initialize I/O stuff (in io.c)
         jsr initIO
 
-        moveq.l #0, %d0
+        | init TOS (top of stack)
+        moveq.l #0, %d0 
         
         | set up parameter stack
         move.l (ps_end), %a6
 
-        | init latest var
+        
+        | init 'latest' var (stores pointer to last defined word in dictionary)
         PUSH #LAST_WORD
         jsr latest
         jsr store
-        
-        | init here var
+
+        | init 'here' var (stores pointer to next word after dictionary, used for compiling new code or dictionary headers)
         PUSH #herePtr
         jsr here
         jsr store
-back:   
-        | jmp back
+        | read a word from input ( -- strAddr strLen )
         jsr word
-        jsr number
+
+        jsr number                      | ( strAddr strLen -- parsedNumber #unparsedChars) 
+        jsr dot                         | ( value --  ) takes the top value on the stack and prints it according to the 'BASE' variable  
         jsr dot
-back2:          
-        jsr dot
-        jmp back2
+back:           
+        jmp back
 
 
         | %d0 is top of stack
