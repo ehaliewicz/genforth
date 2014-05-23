@@ -144,14 +144,16 @@ stackUnderflow:
         
         
         DEFWORD "drop",4,drop,0
+        | ( a -- )
         addq.l #4, %a6
         rts
 
         DEFWORD "dup",3,dup,0
+        | ( a -- a a )
         move.l %d0, -(%a6)
         rts
 
-        DEFWORD "over",4,over,0 
+        DEFWORD "over",4,over,0
         | ( a b -- a b a )
         move.l (%a6), %d1
         move.l %d0, -(%a6)
@@ -159,6 +161,7 @@ stackUnderflow:
         rts
 
         DEFWORD "swap",4,swap,0
+        | ( a b -- b a )
         move.l %d0, %d1
         move.l (%a6), %d0
         move.l %d1, (%a6)
@@ -208,7 +211,9 @@ stackUnderflow:
         rts
         
         DEFWORD "?dup",4,qdup,0 
-        | duplicate top item of stack if non-zero
+        | ( 0 -- )
+        | or 
+        | ( nonzero -- nonzero nonzero )
         tst %d0
         bne qdEnd
         move.l %d0, -(%a6)
@@ -216,12 +221,14 @@ qdEnd:
         rts
         
         DEFWORD ">r",2,rto,0
+        | p:( val -- ) r:(  --  val)
         move.l (%a7), %a0
         | pop top of stack into rstack slot
         pop (%a7)
         jmp (%a0)
         
         DEFWORD "r>",2,rfrom,0
+        | p:(  -- val ) r:( val -- )
         move.l %d0, -(%a6)
         move.l (%a7)+, %a0
         move.l (%a7)+, %d0
@@ -229,35 +236,47 @@ qdEnd:
         
         
         DEFWORD "1+",2,inc,0
+        | ( val -- val+1 )
         addq.l #1, %d0
         rts
         
         DEFWORD "1-",2,dec,0
+        | ( val -- val-1 )
         subq.l #1, %d0
         rts
         
         DEFWORD "4+",2,finc,0
+        | ( val -- val+4 )      
         addq.l #4, %d0
         rts
         
         DEFWORD "4-",2,fdec,0
+        | ( val -- val-4 )      
         subq.l #4, %d0
         rts
         
         DEFWORD "+",1,add,0
+        | ( x y -- x+y )              
         add.l (%a6)+, %d0
         rts
         
         DEFWORD "-",1,sub,0
+        | ( x y -- x-y )                
         sub.l (%a6)+, %d0
         neg.l %d0
         rts
+
+        | *, /, /mod, and mod
+        | only really handle bytes i think....
+        | should add full word multiplication and division
         
         DEFWORD "*",1,mul,0
+        | ( x y -- x-y )
         muls (%a6)+, %d0
         rts
         
         DEFWORD "/mod",4,divmod,0
+        | ( x y -- x%y x/y )
         divs (%a6),%d0
         move.l %d0, %d1
         rol.l #8, %d1
@@ -266,87 +285,93 @@ qdEnd:
         rts
         
         DEFWORD "/",1,div,0
+        | ( x y -- x/y )
         divs (%a6)+,%d0
         andi.l #0x0000FFFF, %d0
         rts
     
         DEFWORD "mod",3,mod,0
+        | ( x y -- x%y )
         divs (%a6)+,%d0
         rol.l #8, %d0
         andi.l #0x0000FFFF, %d0
         rts
     
 push_true:
+        | ( -- 1 )
         PUSH #1
         rts
 push_false:
+        | ( -- 0 )
         PUSH #0
         rts    
         
         DEFWORD "cmp",3,comp,0
         POP %d1
         POP %d2
-        cmp %d1,%d2
-        rts
+        cmp.l %d1,%d2
+        beq push_true
+        bra push_false
+        
         
         DEFWORD "=",1,eq,0
+        | ( x y == 1 ) when x == y
+        | ( x y == 0 ) when x != y
+        
         POP %d1
         POP %d2
-        cmp %d1,%d2
-        beq eqt
-        PUSH #0
-eqt:    
-        PUSH #1
-        rts
+        cmp.l %d1,%d2
+        beq push_true
+        bra push_false
+        
         
         DEFWORD "!=",2,neq,0
         POP %d1
         POP %d2
-        cmp %d1,%d2
+        cmp.l %d1,%d2
         beq push_false
         bra push_true
         
         DEFWORD "0=",2,zeq,0
         POP %d1
-        tst %d1
+
+        | status flags are set on the moved data, not the address
+        | so we can pop a value off the stack,
+        | and the flags are set for that value already
+        | tst.l %d1
         beq push_true
         bra push_false
 
         DEFWORD "0<",2,zlt,0
         POP %d1
-        tst %d1
         blt push_true
         bra push_false
 
         DEFWORD "0<=",3,zle,0
         POP %d1
-        tst %d1
         ble push_true
         bra push_false
         
         DEFWORD "0>",2,zgt,0
         POP %d1
-        tst %d1
-        beq push_true
+        bgt push_true
         bra push_false
         
         DEFWORD "0>=",2,zge,0
         POP %d1
-        tst %d1
-        beq push_true
+        bge push_true
         bra push_false
         
         
         DEFWORD "0!=",3,zneq,0
         POP %d1
-        tst %d1
-        beq push_false
-        bra push_true
+        bne push_true
+        bra push_false
         
         DEFWORD "<",1,lt,0
         POP %d2
         POP %d1
-        cmp %d1, %d2
+        cmp.l %d1, %d2
         blt push_true
         bra push_false
             
@@ -372,7 +397,14 @@ eqt:
         bra push_false
     
         DEFWORD "bye",3,bye,0
-        bra bye
+        PUSH #'B'
+        jsr emit
+        PUSH #'Y'
+        jsr emit
+        PUSH #'E'
+        jsr emit    
+bye_loop:        
+        bra bye_loop
         
         
         DEFWORD "!",1,store,0 
