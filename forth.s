@@ -407,31 +407,41 @@ bye_loop:
         bra bye_loop
         
         
-        DEFWORD "!",1,store,0 
+        DEFWORD "!",1,store,0
+        | ( val addr -- )
+        | stores the given value at the given address
+        | works with 32-bit values
         move.l %d0, %a0
         move.l (%a6)+, (%a0)
         move.l (%a6)+, %d0
         rts
 
         DEFWORD "!+",2,incMem,0
+        | ( addr -- )
+        | increments the value at the given address
         move.l %d0, %a0
         addq.l #1, (%a0)
         move.l (%a6)+, %d0
         rts
         
         DEFWORD "!-",2,decMem,0
+        | ( addr -- )
+        | decrements the value at the address
         move.l %d0, %a0
         subq.l #1, (%a0)
         move.l (%a6)+, %d0
         rts
         
         DEFWORD "@",1,read,0
+        | ( addr -- val )
+        | reads a 32bit value from the given address
         move.l %d0, %a0
         move.l (%a0), %d0
         rts
         
         DEFWORD "@+",2,readInc,0
         | ( addr -- val addr+4 )
+        | reads 32-bit values from successive addresses
         move.l %d0, %a0
         move.l (%a0), %d1
         move.l %d1, -(%a6)
@@ -440,6 +450,7 @@ bye_loop:
         
         DEFWORD "@-",2,readDec,0
         | ( addr -- val addr-4 )
+        | reads 32-bit values from decreasing addresses
         move.l %d0, %a0
         move.l (%a0), %d1
         move.l %d1, -(%a6)
@@ -447,6 +458,8 @@ bye_loop:
         rts
         
         DEFWORD "w!",2,wstore,0
+        | ( val addr -- )       
+        | same as ! but only writes word values
         move.l %d0, %a0
         move.l (%a6)+, %d1
         move.w %d1, (%a0)
