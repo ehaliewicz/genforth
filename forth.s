@@ -66,14 +66,11 @@ ram_start:
         jsr here
         jsr store
 
-        | read a word from input ( -- strAddr strLen )
-        jsr word
-        jsr tdup
-        jsr tell
-        jsr find
-        jsr cr
-        jsr dot
-back:           
+
+        jsr mark
+        PUSH #'a'
+        jsr clearToMark
+back:                   
         jmp back
 
 
@@ -87,8 +84,8 @@ back:
         .equ F_HIDDEN, 0x20  
         .equ F_LENMASK, 0x1F 
         .equ F_HIDDENLENMASK,  0x3F
-        .equ PARAM_STACK_SIZE, 128
-
+        .equ PARAM_STACK_SIZE, 64      
+        .equ SHADOW_STACK_OFFSET, 256
         .set LAST_WORD, 0
         .set LAST_WORD_2, 0
         .set HERE_PTR, 0
@@ -580,6 +577,7 @@ dotPrintLoop:
         | 1 == case-sensitive, 0 == case-insensitive
         DEFVAR "case",4,case,0
         DEFCONST "s0",2,szero, 0, #ps_end
+        DEFCONST "ss0",3,sszero, 0, #shadow_stack | shadow stack
         
         | hundredths of versions ;)
         DEFCONST "version", 7, version, 0, #001
@@ -892,10 +890,51 @@ entry_not_found:
         move.l #0, %a1           | return null pointer               
         bra after_find
         
+
+
+        DEFWORD "mark",4,mark,0
+        move.l #1, (SHADOW_STACK_OFFSET, %a6)             | mark this location in the shadow stack
+        rts
+
+        DEFWORD "unmark",6,unmark,0
+        move.l #0, (SHADOW_STACK_OFFSET, %a6)
+        rts
+        
+
+        DEFWORD "marked?",7,markedp,0
+        move.l %d0, -(%a6)
+        move.l (SHADOW_STACK_OFFSET, %a6), %d0            | move shadow stack value to stack (shadow stack should only contain 0s and 1s
+        rts
+        
+
+        DEFWORD "clear-to-mark",13,clearToMark,0
+        move.l %a6, %a0
+        add.l #SHADOW_STACK_OFFSET, %a0
+ctmLoop:        
+        move.l (%a0)+, %d1
+        bne ctmDone
+        POP %d2
+        bra ctmLoop
+ctmDone:        
+        rts
+
+        
+        DEFWORD "count-to-mark",13,countToMark,0
+        move.l #0, %d2
+        move.l %a6, %a0
+        add.l #SHADOW_STACK_OFFSET, %a0
+cntLoop:
+        move.l (%a0)+, %d1
+        bne cntDone
+        addq.l #1, %d2
+        bra cntLoop
+cntDone:
+        PUSH %d2
+        rts
         
         
+        .space 16
 ps_overflow:
-        .space 10
         | param stack grows down, with the pointer pointing at the top value
         .space 4*PARAM_STACK_SIZE, 'A'
 
@@ -903,6 +942,10 @@ ps_end:
 ps_end_var:
         dc.l ps_end
 
+        .space 4*PARAM_STACK_SIZE, 0
+shadow_stack:
+        
+        
         .align 2        
         | word buffer
 wordBuffer:     

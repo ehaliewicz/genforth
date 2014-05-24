@@ -82,18 +82,18 @@ void get_line_of_input() {
     buffer[i] = ' ';
   }
 
-  buffer[0] = 'f';
-  buffer[1] = 'i';
-  buffer[2] = 'n';
-  buffer[3] = 'd';
-  buffer[4] = ' ';
-  buffer[5] = ' ';
-  buffer[6] = ' ';
-  buffer[7] = ' ';
+  /* buffer[0] = 'f'; */
+  /* buffer[1] = 'i'; */
+  /* buffer[2] = 'n'; */
+  /* buffer[3] = 'd'; */
+  /* buffer[4] = ' '; */
+  /* buffer[5] = ' '; */
+  /* buffer[6] = ' '; */
+  /* buffer[7] = ' '; */
   
-  bufftop = (u32*)(buffer+WIDTH_TILES);
-  curkey  = (u32*)(buffer);
-  return;
+  /* bufftop = (u32*)(buffer+WIDTH_TILES); */
+  /* curkey  = (u32*)(buffer); */
+  /* return; */
   
   char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {
