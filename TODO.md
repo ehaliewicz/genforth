@@ -40,7 +40,7 @@ various character constants ('A', '0', '(', ')', '[', ']', ':', ';', etc)
 immediate/compile and parsing words
 ---------------------------
 
-[COMPILE] (compiles an immediate word into dictionary entry currently being compiled, aka POSTPONE)
+\[COMPILE\] (compiles an immediate word into dictionary entry currently being compiled, aka POSTPONE)
 
 RECURSE (compiles a literal jump to the start of the dictionary entry currently being compiled)
 
@@ -49,3 +49,15 @@ IF/UNLESS/ELSE/THEN (which compile to native branch instructions)
 BEGIN, UNTIL, REPEAT, DO, etc (loop words)
 
 (, ) (comments are delimited by parens)
+
+
+other words
+-----------
+
+mark (marks a location in a shadow stack)
+
+clear-to-mark (clear stack until the stack pointer matches the first mark in the shadow stack)
+
+clear (clear entire data stack)
+
+count-to-mark (counts number of slots used above the last mark on the data stack)
