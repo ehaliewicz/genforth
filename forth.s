@@ -65,11 +65,13 @@ ram_start:
         PUSH #herePtr
         jsr here
         jsr store
+
         | read a word from input ( -- strAddr strLen )
         jsr word
-
-        jsr number                      | ( strAddr strLen -- parsedNumber #unparsedChars) 
-        jsr dot                         | ( value --  ) takes the top value on the stack and prints it according to the 'BASE' variable  
+        jsr tdup
+        jsr tell
+        jsr find
+        jsr cr
         jsr dot
 back:           
         jmp back
@@ -82,8 +84,9 @@ back:
 
         | DEBUG     EQU 1       
         .equ F_IMMED,  0x80
-        .equ F_HIDDEN, 0x20
-        .equ F_LENMASK, 0x1F
+        .equ F_HIDDEN, 0x20  
+        .equ F_LENMASK, 0x1F 
+        .equ F_HIDDENLENMASK,  0x3F
         .equ PARAM_STACK_SIZE, 128
 
         .set LAST_WORD, 0
@@ -846,8 +849,49 @@ number_end:
         
 
         DEFWORD "find",4,find,0
+        POP %d1                 | length of string in d1
+        subq.l #1, %d1          | subtract once for loop
+        POP %a0                 | address of string in a0
+        bra _find
+        PUSH %a1                | dictionary address will be in a1
+after_find:     
+        rts
+        
+_find:
+        move.l (latest), %a1      | address of latest header in a1      
+        beq entry_not_found      | jump ahead if pointer is 0 (null)
         
 
+        
+        | compare lengths of strings
+        move.l 4(%a1), %d2                   | get length in d2
+
+        andi.b #F_HIDDENLENMASK, %d2       | get length and hidden flag
+
+        | if hidden flag is set, this compare will always fail
+        cmp.b %d2, %d1                    | compare lengths
+        bne get_next_entry
+
+
+        | compare strings in detail
+        move.l 5(%a1), %a2                   | dict string address in a2
+        move.l %a0, %a3                         | make copy of address 
+        move.l %d1, %d2                         | make copy of length
+        
+        cmp.b (%a2)+, (%a3)+
+        bne get_next_entry     
+        dble %d2, entry_found        | if dbra is zero 
+
+entry_found:    
+        
+get_next_entry:
+        move.l (%a1), %a1
+        jmp _find
+        
+entry_not_found: 
+        move.l #0, %a1           | return null pointer               
+        bra after_find
+        
         
         
 ps_overflow:

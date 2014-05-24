@@ -82,10 +82,10 @@ void get_line_of_input() {
     buffer[i] = ' ';
   }
 
-  buffer[0] = '-';
-  buffer[1] = '2';
-  buffer[2] = '2';
-  buffer[3] = ' ';
+  buffer[0] = 'f';
+  buffer[1] = 'i';
+  buffer[2] = 'n';
+  buffer[3] = 'd';
   buffer[4] = ' ';
   buffer[5] = ' ';
   buffer[6] = ' ';
