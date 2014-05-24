@@ -5,7 +5,7 @@ CHAR (gets character code of a character following this word in the iinput strea
 
 FIND (searches dictionary for matching entries)
 
->CFA (gets code address from dictionary header)
+\>CFA (gets code address from dictionary header)
 
 CREATE (creates a dictionary header)
 
