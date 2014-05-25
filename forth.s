@@ -1074,8 +1074,72 @@ words_done:
         bra after_words
 
 
-        
+        DEFWORD "create",6,create,0
+        | creates a new header in dictionary
+                                
+        move.l (loc_here), %a0                  | grab pointer to last entry
+        move.l (loc_latest), %a1                | grab next word slot in dictionary
+        POP %d1                                 | get name length
+        POP %a2                                 | get name address
 
+        move.l %a0, (loc_latest)                | update 'latest' pointer
+        move.l %a1, (%a0)+                      | write link pointer
+        move.b %d1, (%a0)+                      | write name length
+
+        
+        subq #1, %d1                            
+_create_char_copy_loop:  
+        move (%a2)+, (%a0)+                     | copy char byte
+        dbra %d1, _create_char_copy_loop        | branch until d1 (length) == 0
+        move.l %a0, %d1
+        btst #0, %d1                            | if least significant bit is 0, we're aligned to 2byte boundary
+        bra _create_update_here
+        addq.l #1, %a0
+_create_update_here:
+        move %a0, (loc_here)
+        rts
+
+        
+        DEFWORD ",", 1,comma, 5
+        POP %d1
+        move.l (loc_here), %a0                  | get 'here' ptr
+        move.l %d1, (%a0)+                      | write 32-bit val
+        move.l %a0, (loc_here)                  | increment 'here' by 4
+        rts
+
+        DEFWORD "w,",2,wordComma,0              | same as above, but writes a word value
+        POP %d1
+        move.l (loc_here), %a0
+        move.w %d1, (%a0)+
+        move.l %a0, (loc_here)
+        rts
+        
+        DEFWORD "[",1,lbrac,0
+        | set state to 0
+        move.l #0, (loc_state)
+        rts
+
+        DEFWORD "]",1,rbrac,0
+        | set state to 1
+        move.l #1, (loc_state)
+        rts
+
+        DEFWORD ":",1,colon,0
+        jsr word
+        jsr create
+        jmp rbrac
+
+        DEFWORD ";",1,semicolon,F_IMMED
+        PUSH #0x4E75
+        jsr wordComma
+        jmp lbrac
+
+        DEFWORD "'",1,tick,0
+        jsr word
+        jsr find
+        jmp tcfa
+        
+        
         
         DEFVAR "HERE",4,here,0,0
         DEFVAR "LATEST",6,latest,0,0
