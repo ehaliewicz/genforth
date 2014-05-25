@@ -73,6 +73,22 @@ int printCursor() {
   return retval;
 }
 
+char charUpcase(char c) {
+  if((c >= 97) & (c <= 122)) {
+    return c-32;
+  } else {
+    return c;
+  }
+}
+
+char charDowncase(char c) {
+  if((c >= 41) & (c <= 90)) {
+    return c+32;
+  } else {
+    return c;
+  }
+}
+
 void get_line_of_input() {
   
   incPrintRow();
@@ -82,11 +98,11 @@ void get_line_of_input() {
     buffer[i] = ' ';
   }
 
-  /* buffer[0] = 'f'; */
-  /* buffer[1] = 'i'; */
-  /* buffer[2] = 'n'; */
-  /* buffer[3] = 'd'; */
-  /* buffer[4] = ' '; */
+  /* buffer[0] = 'W'; */
+  /* buffer[1] = 'O'; */
+  /* buffer[2] = 'R'; */
+  /* buffer[3] = 'D'; */
+  /* buffer[4] = 'S'; */
   /* buffer[5] = ' '; */
   /* buffer[6] = ' '; */
   /* buffer[7] = ' '; */
@@ -215,7 +231,7 @@ void get_line_of_input() {
 
   // skip the null at the end
   for(int i = minPtr; i < WIDTH_TILES; i++) {
-    buffer[i-minPtr+1] = tmpBuffer[i];
+    buffer[i-minPtr+1] = charUpcase(tmpBuffer[i]);
   }
   
   
@@ -223,7 +239,6 @@ void get_line_of_input() {
   curkey  = (u32*)(buffer);
   
 }
-
 
 
 

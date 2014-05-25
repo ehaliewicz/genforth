@@ -48,35 +48,105 @@ main:
 ram_start:
         | initialize I/O stuff (in io.c)
         jsr initIO
-
-        | init TOS (top of stack)
-        moveq.l #0, %d0 
+        
         
         | set up parameter stack
         move.l (ps_end), %a6
 
         
-        | init 'latest' var (stores pointer to last defined word in dictionary)
-        PUSH #LAST_WORD
-        jsr latest
-        jsr store
+        moveq.l #0, %d0 
+        bsr init_latest
+        bsr init_here
 
-        | init 'here' var (stores pointer to next word after dictionary, used for compiling new code or dictionary headers)
-        PUSH #herePtr
-        jsr here
-        jsr store
+interp_loop:
+        bsr word
+        bsr find
+        tst %d0
+        beq cant_find_word
+        bsr tcfa
+        bsr execute
+end_loop:
+        move.l #ps_end, %a6
+        jmp interp_loop
 
+cant_find_word:
+        POP %d2
+        PUSH #'C'
+        bsr emit
+        PUSH #'o'
+        bsr emit
+        PUSH #'u'
+        bsr emit
+        PUSH #'l'
+        bsr emit
+        PUSH #'d'
+        bsr emit
+        PUSH #'n'
+        bsr emit
+        PUSH #'''
+        bsr emit
+        PUSH #'t'
+        bsr emit
+        PUSH #' '
+        bsr emit
+        PUSH #'f'
+        bsr emit
+        PUSH #'i'
+        bsr emit
+        PUSH #'n'
+        bsr emit
+        PUSH #'d'
+        bsr emit
+        PUSH #' '
+        bsr emit
+        PUSH #'w'
+        bsr emit
+        PUSH #'o'
+        bsr emit
+        PUSH #'r'
+        bsr emit
+        PUSH #'d'
+        bsr emit
+        PUSH #' '
+        bsr cr
+        bra end_loop
+        
+        
+        
+        .space 16
+ps_overflow:
 
-        jsr mark
-        PUSH #'a'
-        jsr clearToMark
-back:                   
-        jmp back
+        
+        | param stack grows down, with the pointer pointing at the top value
+        .space 4*PARAM_STACK_SIZE, 'A'
+ps_end: 
+ps_end_var:
+        dc.l ps_end
 
+        .space 4*PARAM_STACK_SIZE, 0
+shadow_stack:
+        
+        
+        .align 2        
+        | word buffer
+wordBuffer:     
+        .space 38, ' '
+        
 
-        | %d0 is top of stack
-        | %a6 is rest of param stack
-        | %a7 is return stack
+        | ptr in key buffer
+curkey:
+        dc.l buffer
+        | ptr to end of input in key buffer
+bufftop:
+        dc.l buffer
+        .align 2
+        | input buffer
+buffer:
+        .space 38, ' ' | 38 character buffer (screen width w/ 1 char margin on each side)
+        
+
+        
+
 
 
         | DEBUG     EQU 1       
@@ -84,8 +154,8 @@ back:
         .equ F_HIDDEN, 0x20  
         .equ F_LENMASK, 0x1F 
         .equ F_HIDDENLENMASK,  0x3F
-        .equ PARAM_STACK_SIZE, 64      
-        .equ SHADOW_STACK_OFFSET, 256
+        .equ PARAM_STACK_SIZE, 128      
+        .equ SHADOW_STACK_OFFSET, PARAM_STACK_SIZE
         .set LAST_WORD, 0
         .set LAST_WORD_2, 0
         .set HERE_PTR, 0
@@ -108,6 +178,12 @@ loc_\label:
         dc.l \val
         DEFWORD \name, \nameLen, \label, \flags
         PUSH #loc_\label
+        rts
+        DEFWORD \name@, \nameLen+1, read_\label, \flags
+        PUSH (loc_\label)
+        rts
+        DEFWORD \name!, \nameLen+1, store_\label, \flags
+        POP (loc_\label)
         rts
         .endm
 
@@ -143,24 +219,24 @@ stackUnderflow:
         jmp stackUnderflowError
         
         
-        DEFWORD "drop",4,drop,0
+        DEFWORD "DROP",4,drop,0
         | ( a -- )
         addq.l #4, %a6
         rts
 
-        DEFWORD "dup",3,dup,0
+        DEFWORD "DUP",3,dup,0
         | ( a -- a a )
         move.l %d0, -(%a6)
         rts
 
-        DEFWORD "over",4,over,0
+        DEFWORD "OVER",4,over,0
         | ( a b -- a b a )
         move.l (%a6), %d1
         move.l %d0, -(%a6)
         move.l %d1, %d0
         rts
 
-        DEFWORD "swap",4,swap,0
+        DEFWORD "SWAP",4,swap,0
         | ( a b -- b a )
         move.l %d0, %d1
         move.l (%a6), %d0
@@ -168,7 +244,7 @@ stackUnderflow:
         rts
 
         
-        DEFWORD "rot",3,rot,0  
+        DEFWORD "ROT",3,rot,0  
         | ( a b c -- b c a )
         | swap +4 and +0
         move.l (%a6)+, %d1
@@ -179,7 +255,7 @@ stackUnderflow:
         move.l %d2, %d0
         rts
      	  
-        DEFWORD "-rot",4,nrot,0
+        DEFWORD "-ROT",4,nrot,0
         | ( a b c -- c a b )
         move.l (%a6)+, %d1
         move.l (%a6)+, %d2
@@ -188,20 +264,20 @@ stackUnderflow:
         move.l %d1, %d0
         rts
         
-        DEFWORD "2dup",4,tdup,0
+        DEFWORD "2DUP",4,tdup,0
         | ( a b -- a b a b )
         move.l (%a6), %d1
         move.l %d0, -(%a6)
         move.l %d1, -(%a6)
         rts
     
-        DEFWORD "2drop",5,tdrop,0
+        DEFWORD "2DROP",5,tdrop,0
         | ( a b c d -- a b )
         addq.l #4, %a6
         POP %d0
         rts
         
-        DEFWORD "2swap",5,tswap,0
+        DEFWORD "2SWAP",5,tswap,0
         | ( 1 2 3 4 -- 3 4 1 2 )
         move.l %d0, %d3
         move.l (%a6)+, %d2
@@ -210,7 +286,7 @@ stackUnderflow:
         movem.l %d1/%d2/%d3, -(%a6)
         rts
         
-        DEFWORD "?dup",4,qdup,0 
+        DEFWORD "?DUP",4,qdup,0 
         | ( 0 -- )
         | or 
         | ( nonzero -- nonzero nonzero )
@@ -220,14 +296,14 @@ stackUnderflow:
 qdEnd:
         rts
         
-        DEFWORD ">r",2,rto,0
+        DEFWORD ">R",2,rto,0
         | p:( val -- ) r:(  --  val)
         move.l (%a7), %a0
         | pop top of stack into rstack slot
         pop (%a7)
         jmp (%a0)
         
-        DEFWORD "r>",2,rfrom,0
+        DEFWORD "R>",2,rfrom,0
         | p:(  -- val ) r:( val -- )
         move.l %d0, -(%a6)
         move.l (%a7)+, %a0
@@ -275,7 +351,7 @@ qdEnd:
         muls (%a6)+, %d0
         rts
         
-        DEFWORD "/mod",4,divmod,0
+        DEFWORD "/MOD",4,divmod,0
         | ( x y -- x%y x/y )
         divs (%a6),%d0
         move.l %d0, %d1
@@ -290,7 +366,7 @@ qdEnd:
         andi.l #0x0000FFFF, %d0
         rts
     
-        DEFWORD "mod",3,mod,0
+        DEFWORD "MOD",3,mod,0
         | ( x y -- x%y )
         divs (%a6)+,%d0
         rol.l #8, %d0
@@ -306,12 +382,6 @@ push_false:
         PUSH #0
         rts    
         
-        DEFWORD "cmp",3,comp,0
-        POP %d1
-        POP %d2
-        cmp.l %d1,%d2
-        beq push_true
-        bra push_false
         
         
         DEFWORD "=",1,eq,0
@@ -396,13 +466,13 @@ push_false:
         bge push_true
         bra push_false
     
-        DEFWORD "bye",3,bye,0
-        PUSH #'B'
-        jsr emit
-        PUSH #'Y'
-        jsr emit
+        DEFWORD "BYE",3,bye,0
         PUSH #'E'
-        jsr emit    
+        PUSH #'Y'
+        PUSH #'B'
+        bsr emit
+        bsr emit
+        bsr emit
 bye_loop:        
         bra bye_loop
         
@@ -457,7 +527,7 @@ bye_loop:
         subq.l #4, %d0
         rts
         
-        DEFWORD "w!",2,wstore,0
+        DEFWORD "W!",2,wstore,0
         | ( val addr -- )       
         | same as ! but only writes word values
         move.l %d0, %a0
@@ -466,26 +536,26 @@ bye_loop:
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "w@",2,wread,0
+        DEFWORD "W@",2,wread,0
         move.l %d0, %a0
         move.w (%a0), %d0
         andi.w #0xFFFF, %d0
         rts
         
-        DEFWORD "c!",2,cstore,0
+        DEFWORD "C!",2,cstore,0
         move.l %d0, %a0
         move.l (%a6)+, %d1
         move.b %d1, (%a0)    | store just a byte
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "c@",2,cread,0
+        DEFWORD "C@",2,cread,0
         move.l %d0, %a0
         move.b (%a0), %d0
         andi.l #0x000000FF, %d0   | just keep the byte read
         rts
         
-        DEFWORD "c@c!",4,ccopy,0
+        DEFWORD "C@C!",4,ccopy,0
         | ( srcAddr destAddr )
         move.l %d0, %a1       | get dest ptr
         move.l (%a6), %a0     | get src ptr
@@ -494,7 +564,7 @@ bye_loop:
         addq.l #1, (%a6)      | increment src ptr
         rts
         
-        DEFWORD "cmove",5,cmove,0
+        DEFWORD "CMOVE",5,cmove,0
                                 | ( srcAddr destAddr numBytes )
                                 | move longwords all at once ;)
         pop %d1                 | numBytes in %d1
@@ -550,7 +620,7 @@ dotPrintLoop:
         PUSH #0x20
         bra emit
     
-        DEFWORD "depth",5,depth,0
+        DEFWORD "DEPTH",5,depth,0
         | ( -- depth )
         move.l %a6, %d1
         subi.l #ps_end, %d1
@@ -560,7 +630,7 @@ dotPrintLoop:
         PUSH %d1
         rts
         
-        DEFWORD "goto",4,goto,0
+        DEFWORD "GOTO",4,goto,0
         move.l %d0, %a0
         move.l (%a6)+, %d0
         addq #4, %a7
@@ -569,85 +639,83 @@ dotPrintLoop:
 
         
 
-        DEFVAR "state",5,state,0,0
-        DEFVAR "here",4,here,0,0
-        DEFVAR "latest",6,latest,0,0
-        DEFVAR "base",4,base,0,0xA
+        DEFVAR "STATE",5,state,0,0
+        DEFVAR "BASE",4,base,0,0xA
         
         | 1 == case-sensitive, 0 == case-insensitive
-        DEFVAR "case",4,case,0
-        DEFCONST "s0",2,szero, 0, #ps_end
-        DEFCONST "ss0",3,sszero, 0, #shadow_stack | shadow stack
+        DEFVAR "CASE",4,case,0
+        DEFCONST "S0",2,szero, 0, #ps_end
+        DEFCONST "SS0",3,sszero, 0, #shadow_stack | shadow stack
         
         | hundredths of versions ;)
-        DEFCONST "version", 7, version, 0, #001
-        DEFCONST "r0", 2, rzero, 0, #0x00FFFE00 
-        DEFCONST "f_immed", 7, fimmed, 0, #F_IMMED
-        DEFCONST "f_hidden", 8, fhidden, 0, #F_HIDDEN
-        DEFCONST "f_lenmask", 9, flenmask, 0, #F_LENMASK
+        DEFCONST "VERSION", 7, version, 0, #001
+        DEFCONST "R0", 2, rzero, 0, #0x00FFFE00 
+        DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED
+        DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN
+        DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK
     
     
-        DEFWORD "and",3,and,0
+        DEFWORD "AND",3,and,0
         and.l (%a6)+, %d0
         rts
         
-        DEFWORD "or",2,or,0
+        DEFWORD "OR",2,or,0
         or.l (%a6)+, %d0
         rts
         
-        DEFWORD "xor",3,xor,0
+        DEFWORD "XOR",3,xor,0
         move.l (%a6)+, %d1
         eor.l %d1, %d0
         rts
 
-        DEFWORD "negate", 6, negate,0
+        DEFWORD "NEGATE", 6, negate,0
         neg.l %d0
         rts
         
-        DEFWORD "not", 3, not, 0
+        DEFWORD "NOT", 3, not, 0
         not.l %d0
         rts
 
-        DEFWORD "exit", 4, exit, 0
+        DEFWORD "EXIT", 4, exit, 0
         addq #4, %sp
         rts
 
-        DEFWORD "lit", 3, lit, 0
+        DEFWORD "LIT", 3, lit, 0
         move.l (%a7), %a0
         push (%a0)
         addq.l #4, (%a7)
         rts
 
         | won't work inlined!
-        DEFWORD "rsp@",4,rspread,0
+        DEFWORD "RSP@",4,rspread,0
         |  r ( something return-addr )
         PUSH %sp
         addq #4, %d0
         rts
 
         | won't work inlined!
-        DEFWORD "rsp!",4,rspstore,0
+        DEFWORD "RSP!",4,rspstore,0
         move.l (%a7), %a0
         POP %a7
         jmp (%a0)
 
         | won't work inlined!
-        DEFWORD "rdrop",5,rdrop,0
+        DEFWORD "RDROP",5,rdrop,0
         move.l (%a7)+, (%a7)
         rts
 
 
-        DEFWORD "dsp@",4,dspfetch,0
+        DEFWORD "DSP@",4,dspfetch,0
         move.l %a6, %d1
         PUSH %d1
         rts
 
-        DEFWORD "dsp!",4,dspstore,0
+        DEFWORD "DSP!",4,dspstore,0
         move.l %d0, %a6
         move.l (%a6)+, %d0
         rts
 
-        DEFWORD "key",3,key,0
+        DEFWORD "KEY",3,key,0
         bra _key
 afterCallKey:   
         rts
@@ -670,19 +738,29 @@ _key:
                 
         addq.l #1, (curkey)
         bra afterCallKey
-        
+
+saved_rsp:
+        dc.l 0
+saved_sp:
+        dc.l 0
+saved_d0:
+        dc.l 0
         
 get_new_input:
-        movem.l %d0/%a6, -(%a7) 
+        move.l %d0, (saved_d0)
+        move.l %a6, (saved_sp)
+        move.l %a7, (saved_rsp)
         jsr get_line_of_input
-        movem.l (%a7)+, %d0/%a6
+        move.l (saved_rsp), %a7
+        move.l (saved_sp), %a6
+        move.l (saved_d0), %d0
         
         | go back to the top and try to grab character
         bra _key
 
 
         
-        DEFWORD "ccall1",6,ccall1,0
+        DEFWORD "CCALL1",6,ccall1,0
         | ( p1 addr -- )
         POP %a0 | get address
         POP %d1 | get param
@@ -693,7 +771,7 @@ get_new_input:
         RESTORE_REGS
         rts
 
-        DEFWORD "ccall2",6,ccall2,0
+        DEFWORD "CCALL2",6,ccall2,0
         | ( p1 p2 addr -- )
         POP %a0
         POP %d2
@@ -706,7 +784,7 @@ get_new_input:
         RESTORE_REGS
         rts
         
-        DEFWORD "ccall3",6,ccall3,0
+        DEFWORD "CCALL3",6,ccall3,0
         | ( p1 p2 p3 addr -- )
         POP %a0
         POP %d3
@@ -721,15 +799,18 @@ get_new_input:
         RESTORE_REGS
         rts
         
-        DEFWORD "emit",4,emit,0
+        DEFWORD "EMIT",4,emit,0
         | ( key )
         | ccall1 ( param addr -- )
         PUSH #printChar
-        jsr ccall1
-        
-        rts
+        bra ccall1
 
-        DEFWORD "word",4,word,0
+        DEFWORD "CR",2,cr,0
+        PUSH #'\n'
+        bra emit
+        
+        
+        DEFWORD "WORD",4,word,0
         moveq.l #0, %d1                 | length in d1
         bra get_first_char
 after_get_char:
@@ -753,7 +834,7 @@ store_chars:
                 
         RPUSH %a0
         RPUSH %d1
-        jsr key                        | get next char
+        bsr key                        | get next char
         RPOP %d1
         RPOP %a0
         cmpi.b #' ', %d0
@@ -767,19 +848,13 @@ store_chars:
 
         
         
-        DEFWORD "tell",4,tell,0
+        DEFWORD "TELL",4,tell,0
         | just print a whole string
         | ( strAddr strLen -- )
         push #printStrn
-        jsr ccall2
-        rts
-
-        DEFWORD "cr",2,cr,0
-        PUSH #'\n'
-        jsr emit
-        rts
+        bra ccall2
         
-        DEFWORD "number",6,number,0
+        DEFWORD "NUMBER",6,number,0
         | ( strAddr strLen -- )
         | parses a string into a string
         | returns 0 if error detected
@@ -792,8 +867,8 @@ after_get_number:
 
 _number:
         | move.b (base), %d4      | get base
-        jsr base
-        jsr read
+        bsr base
+        bsr read
         POP %d4                 | place base in d4
         POP %d1                 | place length in d1
         POP %a0                 | place addr in a0
@@ -846,68 +921,23 @@ number_end:
         bra after_get_number
         
 
-        DEFWORD "find",4,find,0
-        POP %d1                 | length of string in d1
-        subq.l #1, %d1          | subtract once for loop
-        POP %a0                 | address of string in a0
-        bra _find
-        PUSH %a1                | dictionary address will be in a1
-after_find:     
-        rts
-        
-_find:
-        move.l (latest), %a1      | address of latest header in a1      
-        beq entry_not_found      | jump ahead if pointer is 0 (null)
-        
 
-        
-        | compare lengths of strings
-        move.l 4(%a1), %d2                   | get length in d2
-
-        andi.b #F_HIDDENLENMASK, %d2       | get length and hidden flag
-
-        | if hidden flag is set, this compare will always fail
-        cmp.b %d2, %d1                    | compare lengths
-        bne get_next_entry
-
-
-        | compare strings in detail
-        move.l 5(%a1), %a2                   | dict string address in a2
-        move.l %a0, %a3                         | make copy of address 
-        move.l %d1, %d2                         | make copy of length
-        
-        cmp.b (%a2)+, (%a3)+
-        bne get_next_entry     
-        dble %d2, entry_found        | if dbra is zero 
-
-entry_found:    
-        
-get_next_entry:
-        move.l (%a1), %a1
-        jmp _find
-        
-entry_not_found: 
-        move.l #0, %a1           | return null pointer               
-        bra after_find
-        
-
-
-        DEFWORD "mark",4,mark,0
+        DEFWORD "MARK",4,mark,0
         move.l #1, (SHADOW_STACK_OFFSET, %a6)             | mark this location in the shadow stack
         rts
 
-        DEFWORD "unmark",6,unmark,0
+        DEFWORD "UNMARK",6,unmark,0
         move.l #0, (SHADOW_STACK_OFFSET, %a6)
         rts
         
 
-        DEFWORD "marked?",7,markedp,0
+        DEFWORD "MARKED?",7,markedp,0
         move.l %d0, -(%a6)
         move.l (SHADOW_STACK_OFFSET, %a6), %d0            | move shadow stack value to stack (shadow stack should only contain 0s and 1s
         rts
         
 
-        DEFWORD "clear-to-mark",13,clearToMark,0
+        DEFWORD "CLEAR-TO-MARK",13,clearToMark,0
         move.l %a6, %a0
         add.l #SHADOW_STACK_OFFSET, %a0
 ctmLoop:        
@@ -919,7 +949,7 @@ ctmDone:
         rts
 
         
-        DEFWORD "count-to-mark",13,countToMark,0
+        DEFWORD "COUNT-TO-MARK",13,countToMark,0
         move.l #0, %d2
         move.l %a6, %a0
         add.l #SHADOW_STACK_OFFSET, %a0
@@ -933,35 +963,128 @@ cntDone:
         rts
         
         
-        .space 16
-ps_overflow:
-        | param stack grows down, with the pointer pointing at the top value
-        .space 4*PARAM_STACK_SIZE, 'A'
+        DEFWORD "FIND",4,find,0
+        POP %d1                 | length of string in d1
+        POP %a0                 | address of string in a0
+        bra _find_start
+after_find:     
+        PUSH %a1                | dictionary address will be in a1
+        rts
+        
+_find_start:
+        moveq.l #0, %d2
+        move.l (loc_latest), %a1      | address of latest header in a1      
+_find:
+        | compare lengths of strings
+        move.b 4(%a1), %d2                   | get length in d2
 
-ps_end: 
-ps_end_var:
-        dc.l ps_end
+        andi.b #F_HIDDENLENMASK, %d2       | get length and hidden flag
 
-        .space 4*PARAM_STACK_SIZE, 0
-shadow_stack:
+        | if hidden flag is set, this compare will always fail
+        cmp.b %d2, %d1                    | compare lengths
+        bne get_next_entry
+
+
+        | compare strings in detail
+        move.l %a1, %a2                   | dict string address in a2
+        addq.l #5, %a2
+        move.l %a0, %a3                   | make copy of address 
+        | move.l %d1, %d2                 | make copy of length
+        subq #1, %d2
+
+tst_loop:       
+        cmp.b (%a2)+, (%a3)+
+        bne get_next_entry     
+        dble %d2, tst_loop              | if dbra is zero 
         
+entry_found:    
+        bra after_find
         
-        .align 2        
-        | word buffer
-wordBuffer:     
-        .space 38, ' '
+get_next_entry:
+        tst (%a1)
+        beq entry_not_found
+        move.l (%a1), %a1
+        bra _find
+        
+entry_not_found: 
+        move.l #0, %a1           | return null pointer               
+        bra after_find
         
 
-        | ptr in key buffer
-curkey:
-        dc.l buffer
-        | ptr to end of input in key buffer
-bufftop:
-        dc.l buffer
-        .align 2
-        | input buffer
-buffer:
-        .space 38, ' ' | 38 character buffer (screen width w/ 1 char margin on each side)
+
+
+        DEFWORD ">CFA", 4, tcfa, 0
+        | header format
+        | prev_link (4 bytes)
+        | namelen (1 byte)
+        | string .. (namelen bytes)
+        | padding (0 or more bytes)
+        moveq.l #0, %d1
+        POP %a0                 | pointer to prev link in a0
+        addq #4, %a0            | pointer to namelen
+        move.b (%a0), %d1       |
+        addq #1, %a0
+        andi.b #F_LENMASK, %d1  | name len in d1
+        add.l %a0, %d1          | pointer to next slot after name
+        btst #0, %d1            | if least significant bit is 0, we're good
+        beq tcfa_return_addr
+        addq.l #1, %d1
+tcfa_return_addr:       
+        PUSH %d1
+        rts
+
+
+        DEFWORD "EXECUTE",7,execute,0
+        POP %a0
+        jsr (%a0)
+        rts
+
+
+
+        DEFWORD "WORDS",5,words,0
+        bra words_start
+after_words:    
+        rts
+
+words_start:    
+        move.l (loc_latest), %a1      | address of latest header in a1      
+
+words_loop:     
+        move.b 4(%a1), %d2                   | get length in d2
+        andi.b #F_LENMASK, %d2       | get length and hidden flag
+        move.l %a1, %a2
+        addq.l #5, %a2
+
+        PUSH %a1
+        PUSH %a2
+        PUSH %d2
+
+        bsr tell 
+
+        PUSH #' '
+        bsr emit
+        POP %a1
         
-herePtr:
+        tst (%a1)
+        beq words_done
+        move.l (%a1), %a1
+        bra words_loop        
+
+words_done:     
+        bra after_words
+
+
+        
+
+        
+        DEFVAR "HERE",4,here,0,0
+        DEFVAR "LATEST",6,latest,0,0
+
+init_latest:    
+        PUSH #LAST_WORD
+        jmp store_latest
+
+init_here:      
+        PUSH #.+24
+        jmp store_here
         
