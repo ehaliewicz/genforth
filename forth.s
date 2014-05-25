@@ -59,17 +59,27 @@ ram_start:
         bsr init_here
 
 interp_loop:
-        bsr word
-        bsr find
-        tst %d0
-        beq cant_find_word
+        bsr word | ( addr len )
+        bsr tdup | ( addr len addr len )
+        bsr find | ( addr len ptr )
+        tst %d0 
+        beq no_word
         bsr tcfa
         bsr execute
-end_loop:
-        move.l #ps_end, %a6
-        jmp interp_loop
+        bra interp_loop
 
-cant_find_word:
+
+no_word:
+        | try parsing number
+        bsr drop
+        | ( addr len )
+        bsr number      | ( number unparsedChars )
+        tst %d0
+        beq interp_error
+        bsr drop        | ( number )
+        bra interp_loop
+        
+interp_error:     
         POP %d2
         PUSH #'C'
         bsr emit
@@ -109,7 +119,7 @@ cant_find_word:
         bsr emit
         PUSH #' '
         bsr cr
-        bra end_loop
+        bra interp_loop
         
         
         
@@ -855,7 +865,7 @@ store_chars:
         bra ccall2
         
         DEFWORD "NUMBER",6,number,0
-        | ( strAddr strLen -- )
+        | ( strAddr strLen --  number #unparsedChars )
         | parses a string into a string
         | returns 0 if error detected
        
@@ -1138,6 +1148,8 @@ _create_update_here:
         jsr word
         jsr find
         jmp tcfa
+
+        
         
         
         
