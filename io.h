@@ -15,5 +15,7 @@ void incPrintRow();
 void incPrintCol();
 void get_line_of_input();
 void printChar(char c);
+void printStrn(char* str, u8 strLen);
+void printStrNewline(char* str, u8 strLen);
 
 #endif

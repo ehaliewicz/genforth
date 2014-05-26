@@ -264,3 +264,11 @@ void printStrn(char* str, u8 strLen) {
     printChar(str[i]);
   }
 }
+
+void printStrNewline(char* str, u8 strLen) {
+  // if string will wrap-around, print newline first
+  if(printCol+strLen >= WIDTH_TILES+1) {
+    incPrintRow();
+  }
+  printStrn(str, strLen);
+}

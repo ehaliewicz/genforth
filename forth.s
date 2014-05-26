@@ -1,3 +1,25 @@
+        
+        | subroutine threaded forth for the megadrive
+
+        | a5 points to the user pointer (for multiple tasks, very useful in games)
+        | a6 points to the second to top value on the parameter stack and grows downward
+        | d0 contains the top value on the parameter stack
+        | a7 points to the top value on the return stack (native stack) and grows downward
+
+             
+        | DEBUG     EQU 1       
+        .equ F_IMMED,  0x80
+        .equ F_HIDDEN, 0x20  
+        .equ F_LENMASK, 0x1F 
+        .equ F_HIDDENLENMASK,  0x3F
+        .equ PARAM_STACK_SIZE, 32      
+        .equ SHADOW_STACK_OFFSET, PARAM_STACK_SIZE
+        .set LAST_WORD, 0
+        .set LAST_WORD_2, 0
+        .set USER_VAR_OFFSET, 0
+        .set USER_VAR_COUNT, 0
+
+
         | pushes a value onto the return stack
         | which is buffered to have the top value in d0
         | this macro also does bounds checking
@@ -29,13 +51,80 @@
         move.l \reg, -(%a7)
         .endm
 
+                
 
-    
+        .macro DEFWORD name, nameLen, label, flags
+        .set LAST_WORD_2, .
+        dc.l LAST_WORD
+        .set LAST_WORD, LAST_WORD_2
+        .byte \nameLen+\flags
+        .ascii "\name"
+        .align 2
+\label:
+        .endm
+
+        .macro DEFSYSVAR name, nameLen, label, flags, val
+loc_\label:
+        dc.l \val
+        DEFWORD \name, \nameLen, \label, \flags
+        PUSH #loc_\label
+        rts
+
+        | DEFWORD \name@, \nameLen+1, read_\label, \flags
+        | PUSH (loc_\label)
+        | rts
+
+        | DEFWORD \name!, \nameLen+1, store_\label, \flags
+        | POP (loc_\label)
+        | rts
+        .endm
+        
+
+        .macro DEFUSERVAR name, nameLen, label, flags, val
+        
+        DEFWORD \name, \nameLen, \label, \flags
+        add.l %a5, %a4                  | offset by user task pointer
+        PUSH %a4                        | push result onto stack
+        rts
+
+        | DEFWORD \name@, \nameLen+1, read_\label, \flags
+        | PUSH USER_VAR_OFFSET(%a5)
+        | rts
+        | DEFWORD \name!, \nameLen+1, store_\label, \flags
+        | POP USER_VAR_OFFSET(%a5)
+        | rts
+
+        | increment offset pointer
+        .set USER_VAR_OFFSET, (USER_VAR_OFFSET+4)
+        .set USER_VAR_COUNT, USER_VAR_COUNT+1
+        .endm
+
+
+        
+        .macro DEFCONST name, nameLen, label, flags, val
+        DEFWORD \name, \nameLen, \label, \flags
+        PUSH \val
+        rts
+        .endm
+        
+        .macro SAVE_REGS
+        movem.l %d0/%a5/%a6/%a7, -(%a7) 
+        .endm
+
+        .macro RESTORE_REGS
+        movem.l (%a7)+, %d0/%a5/%a6/%a7
+        .endm
+
+   
+
+
+
+        
         .text
         .globl main, get_line_of_input, buffer, bufftop, curkey
-        .extern stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline
+        .extern stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline, printStrn, printStrNewline
 
-        | start of ROM
+        | ENTRY POINT, start of ROM
 main:
         | well, we don't really need ROM yet so jump to RAM ;)
         jmp ram_start
@@ -44,7 +133,32 @@ main:
 
         
 
+        
+
         .data
+
+        | place all system vars at the beginning
+        DEFSYSVAR "CP",4,cp,0,0
+        DEFSYSVAR "LATEST",6,latest,0,0
+        DEFSYSVAR "UOFF",4,user_var_offset,0,0
+        DEFSYSVAR "UCNT",4,user_var_count,0,0
+        
+        DEFSYSVAR "STATE",5,state,0,0
+        DEFSYSVAR "BASE",4,base,0,0xA
+        | 1 == case-sensitive, 0 == case-insensitive
+        DEFSYSVAR "CASE",4,case,0
+        
+        DEFCONST "S0",2,szero, 0, #ps_end
+        DEFCONST "SS0",3,sszero, 0, #shadow_stack | shadow stack
+        
+        | hundredths of versions ;)
+        DEFCONST "VERSION", 7, version, 0, #001
+        DEFCONST "R0", 2, rzero, 0, #0x00FFFE00 
+        DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED
+        DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN
+        DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK
+
+        
 ram_start:
         | initialize I/O stuff (in io.c)
         jsr initIO
@@ -56,12 +170,32 @@ ram_start:
         
         moveq.l #0, %d0 
         bsr init_latest
-        bsr init_here
+        bsr init_cp
+        bsr init_uvo
+back:
+        bsr init_up
+        
+        bsr words
 
+back2:  
+
+        PUSH #'A'
+        bsr tenkloop
+        bsr key
+        bsr depth
+        bsr dot
+        jmp back2
+
+tenkloop:
+        move.l #50000, %d1
+lp:
+        dbra %d1, lp
+        rts
+        
 interp_loop:
-        bsr word | ( addr len )
-        bsr tdup | ( addr len addr len )
-        bsr find | ( addr len ptr )
+        bsr word                        | ( addr len )
+        bsr tdup                        | ( addr len addr len )
+        bsr find                        | ( addr len ptr )
         tst %d0 
         beq no_word
         bsr tcfa
@@ -159,57 +293,9 @@ buffer:
 
 
 
-        | DEBUG     EQU 1       
-        .equ F_IMMED,  0x80
-        .equ F_HIDDEN, 0x20  
-        .equ F_LENMASK, 0x1F 
-        .equ F_HIDDENLENMASK,  0x3F
-        .equ PARAM_STACK_SIZE, 128      
-        .equ SHADOW_STACK_OFFSET, PARAM_STACK_SIZE
-        .set LAST_WORD, 0
-        .set LAST_WORD_2, 0
-        .set HERE_PTR, 0
-
-        
-
-        .macro DEFWORD name, nameLen, label, flags
-        .set LAST_WORD_2, .
-        dc.l LAST_WORD
-        .set LAST_WORD, LAST_WORD_2
-        .byte \nameLen+\flags
-        .ascii "\name"
-        .align 2
-\label:
-        .endm
 
 
-        .macro DEFVAR name, nameLen, label, flags, val
-loc_\label:
-        dc.l \val
-        DEFWORD \name, \nameLen, \label, \flags
-        PUSH #loc_\label
-        rts
-        DEFWORD \name@, \nameLen+1, read_\label, \flags
-        PUSH (loc_\label)
-        rts
-        DEFWORD \name!, \nameLen+1, store_\label, \flags
-        POP (loc_\label)
-        rts
-        .endm
 
-        .macro DEFCONST name, nameLen, label, flags, val
-        DEFWORD \name, \nameLen, \label, \flags
-        PUSH \val
-        rts
-        .endm
-        
-        .macro SAVE_REGS
-        movem.l %d0/%a6, -(%a7) 
-        .endm
-
-        .macro RESTORE_REGS
-        movem.l (%a7)+, %d0/%a6
-        .endm
         
 stackOverflow:
         
@@ -649,20 +735,8 @@ dotPrintLoop:
 
         
 
-        DEFVAR "STATE",5,state,0,0
-        DEFVAR "BASE",4,base,0,0xA
         
-        | 1 == case-sensitive, 0 == case-insensitive
-        DEFVAR "CASE",4,case,0
-        DEFCONST "S0",2,szero, 0, #ps_end
-        DEFCONST "SS0",3,sszero, 0, #shadow_stack | shadow stack
         
-        | hundredths of versions ;)
-        DEFCONST "VERSION", 7, version, 0, #001
-        DEFCONST "R0", 2, rzero, 0, #0x00FFFE00 
-        DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED
-        DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN
-        DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK
     
     
         DEFWORD "AND",3,and,0
@@ -735,40 +809,37 @@ _key:
         move.l curkey, %d1
         cmp.l bufftop, %d1
 
+        
                                 | if curkey == end of buffer, get new line of input
         bge get_new_input
                                 | otherwise grab the next character from the buffer
 
         | move.l %d0
         | PUSH (%a0)+
-        move.l %d0, -(%a6)
         move.l (curkey), %a0
-        move.b (%a0), %d0
+        PUSH (%a0)
         and.l #0x000000FF, %d0
                 
         addq.l #1, (curkey)
         bra afterCallKey
 
-saved_rsp:
-        dc.l 0
-saved_sp:
-        dc.l 0
-saved_d0:
-        dc.l 0
+
         
 get_new_input:
-        move.l %d0, (saved_d0)
-        move.l %a6, (saved_sp)
-        move.l %a7, (saved_rsp)
-        jsr get_line_of_input
-        move.l (saved_rsp), %a7
-        move.l (saved_sp), %a6
-        move.l (saved_d0), %d0
-        
+        PUSH #get_line_of_input
+        bsr ccall0
+              
         | go back to the top and try to grab character
         bra _key
 
 
+        DEFWORD "CCALL0",6,ccall0,0
+        POP %a0 | address
+        SAVE_REGS
+        jsr (%a0)
+        RESTORE_REGS
+        rts
+        
         
         DEFWORD "CCALL1",6,ccall1,0
         | ( p1 addr -- )
@@ -831,7 +902,7 @@ after_get_char:
         
 get_first_char:
                                         | get key on top of stack
-        bsr _key
+        bsr key
         cmpi.b #' ', %d0
         beq get_first_char
 
@@ -862,6 +933,10 @@ store_chars:
         | just print a whole string
         | ( strAddr strLen -- )
         push #printStrn
+        bra ccall2
+
+        DEFWORD "TELLN",5,telln,0
+        push #printStrNewline
         bra ccall2
         
         DEFWORD "NUMBER",6,number,0
@@ -1069,7 +1144,7 @@ words_loop:
         PUSH %a2
         PUSH %d2
 
-        bsr tell 
+        bsr telln
 
         PUSH #' '
         bsr emit
@@ -1084,10 +1159,10 @@ words_done:
         bra after_words
 
 
-        DEFWORD "create",6,create,0
+        DEFWORD "CREATE",6,create,0
         | creates a new header in dictionary
-                                
-        move.l (loc_here), %a0                  | grab pointer to last entry
+
+        move.l (loc_cp), %a0                  | grab pointer to last entry
         move.l (loc_latest), %a1                | grab next word slot in dictionary
         POP %d1                                 | get name length
         POP %a2                                 | get name address
@@ -1103,64 +1178,103 @@ _create_char_copy_loop:
         dbra %d1, _create_char_copy_loop        | branch until d1 (length) == 0
         move.l %a0, %d1
         btst #0, %d1                            | if least significant bit is 0, we're aligned to 2byte boundary
-        bra _create_update_here
+        bra _create_update_cp
         addq.l #1, %a0
-_create_update_here:
-        move %a0, (loc_here)
+_create_update_cp:
+        move %a0, (loc_cp)
         rts
 
         
-        DEFWORD ",", 1,comma, 5
+        DEFWORD ",", 1,comma, 0
         POP %d1
-        move.l (loc_here), %a0                  | get 'here' ptr
+        move.l (loc_cp), %a0                  | get 'cp' ptr
         move.l %d1, (%a0)+                      | write 32-bit val
-        move.l %a0, (loc_here)                  | increment 'here' by 4
+        move.l %a0, (loc_cp)                  | increment 'cp' by 4
         rts
 
         DEFWORD "w,",2,wordComma,0              | same as above, but writes a word value
         POP %d1
-        move.l (loc_here), %a0
+        move.l (loc_cp), %a0
         move.w %d1, (%a0)+
-        move.l %a0, (loc_here)
+        move.l %a0, (loc_cp)
         rts
         
         DEFWORD "[",1,lbrac,0
         | set state to 0
-        move.l #0, (loc_state)
-        rts
-
+        PUSH #0
+        bsr state
+        bra store
+        
         DEFWORD "]",1,rbrac,0
         | set state to 1
-        move.l #1, (loc_state)
-        rts
-
+        PUSH #1
+        bsr state
+        bra store
+        
         DEFWORD ":",1,colon,0
         jsr word
         jsr create
-        jmp rbrac
+        bra rbrac
 
         DEFWORD ";",1,semicolon,F_IMMED
         PUSH #0x4E75
         jsr wordComma
-        jmp lbrac
+        bra lbrac
 
         DEFWORD "'",1,tick,0
         jsr word
         jsr find
-        jmp tcfa
+        bra tcfa
+
+        DEFWORD "PAD",3,pad,0
+        move.l (loc_cp), %d1
+        add.l #300, %d1
+        PUSH %d1
+        rts
 
         
         
-        
-        
-        DEFVAR "HERE",4,here,0,0
-        DEFVAR "LATEST",6,latest,0,0
 
 init_latest:    
         PUSH #LAST_WORD
-        jmp store_latest
+        move.l #LAST_WORD, (loc_latest)
+        rts
 
-init_here:      
+init_cp:        
         PUSH #.+24
-        jmp store_here
+        move.l #.+24, (loc_cp)
+        rts
+
+init_uvo:
+        move.l #USER_VAR_OFFSET, (loc_user_var_offset)
+        rts
+
+init_up:
+        move.l #user_variables_start, %a5
+        rts
+
+init_ucnt:
+        move.l #USER_VAR_COUNT, (loc_user_var_count)
+        
+        
+
+        .space 32768, 'D'               | 32kB space for dictionary
+
+        
+        
+user_variables_start:   
+
+        .space 15360, 'U'               | space for 20 user tasks
+
+        | Task Save Area, 140 bytes
+        | for saving
+        | d0, a6, a7  == 12 bytes
+        | 32 return stack addresses
+        
+        | Terminal Input Buffer, 128 bytes
+        | User variables area, 128 bytes
+        | HOLD area, 40 bytes
+        | PAD buffer, 88 bytes
+        | Leave stack, 128 bytes
+user_variables_end:     
         
