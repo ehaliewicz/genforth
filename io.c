@@ -4,9 +4,6 @@
 #include "io.h"
 
 
-//char scrnBuf[HEIGHT_TILES][(WIDTH_TILES*1.5)+1];
-//int bufYOffset;
-
 extern char buffer[WIDTH_TILES];
 extern u32 *bufftop, *curkey;
 
@@ -98,14 +95,22 @@ void get_line_of_input() {
     buffer[i] = ' ';
   }
 
-  /* buffer[0] = 'W'; */
-  /* buffer[1] = 'O'; */
-  /* buffer[2] = 'R'; */
-  /* buffer[3] = 'D'; */
-  /* buffer[4] = 'S'; */
-  /* buffer[5] = ' '; */
-  /* buffer[6] = ' '; */
+  /* buffer[0] = ':'; */
+  /* buffer[1] = ' '; */
+  /* buffer[2] = 'S'; */
+  /* buffer[3] = 'Q'; */
+  /* buffer[4] = ' '; */
+  /* buffer[5] = 'D'; */
+  /* buffer[6] = 'U'; */
+  /* buffer[7] = 'P'; */
   /* buffer[7] = ' '; */
+  /* buffer[7] = '2'; */
+  /* buffer[7] = ' '; */
+  /* buffer[7] = '*'; */
+  /* buffer[7] = ' '; */
+  /* buffer[7] = ';'; */
+  
+  
   
   /* bufftop = (u32*)(buffer+WIDTH_TILES); */
   /* curkey  = (u32*)(buffer); */
@@ -235,7 +240,7 @@ void get_line_of_input() {
   }
   
   
-  bufftop = (u32*)(buffer+WIDTH_TILES);
+  bufftop = (u32*)(buffer+WIDTH_TILES-1);
   curkey  = (u32*)(buffer);
   
 }
@@ -244,7 +249,7 @@ void get_line_of_input() {
 
 
 void printChar(char c) {
-  
+
   if (c == '\n') {
     incPrintRow();
   } else {
@@ -259,7 +264,7 @@ void printChar(char c) {
 }
 
 void printStrn(char* str, u8 strLen) {
-  
+  incPrintRow();
   for(int i = 0; i < strLen; i++) {
     printChar(str[i]);
   }

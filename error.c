@@ -88,7 +88,7 @@ void stackError(char* errorMsg) {
   printStack(rStackPointer, torsDump, y+14, "return stack", 1);
   
   
-  while(1);    
+  while(1) { }  
 }
 
 
@@ -100,4 +100,14 @@ void stackOverflowError()
 
 void stackUnderflowError() {
   stackError("STACK UNDERFLOW!"); 
+}
+
+
+void interpParseError() 
+{
+  VDP_init();
+  VDP_drawText("INTERPRETER PARSE ERROR!", 7, 0);
+  
+  while(1) { }
+  
 }

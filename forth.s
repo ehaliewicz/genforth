@@ -1,5 +1,5 @@
         
-        | subroutine threaded forth for the megadrive
+        | subroutine thfetched forth for the megadrive
 
         | a5 points to the user pointer (for multiple tasks, very useful in games)
         | a6 points to the second to top value on the parameter stack and grows downward
@@ -18,7 +18,7 @@
         .set LAST_WORD_2, 0
         .set USER_VAR_OFFSET, 0
         .set USER_VAR_COUNT, 0
-
+        .set RSTACK_END, 0x00FFFE00 
 
         | pushes a value onto the return stack
         | which is buffered to have the top value in d0
@@ -70,7 +70,7 @@ loc_\label:
         PUSH #loc_\label
         rts
 
-        | DEFWORD \name@, \nameLen+1, read_\label, \flags
+        | DEFWORD \name@, \nameLen+1, fetch_\label, \flags
         | PUSH (loc_\label)
         | rts
 
@@ -87,7 +87,7 @@ loc_\label:
         PUSH %a4                        | push result onto stack
         rts
 
-        | DEFWORD \name@, \nameLen+1, read_\label, \flags
+        | DEFWORD \name@, \nameLen+1, fetch_\label, \flags
         | PUSH USER_VAR_OFFSET(%a5)
         | rts
         | DEFWORD \name!, \nameLen+1, store_\label, \flags
@@ -122,19 +122,16 @@ loc_\label:
         
         .text
         .globl main, get_line_of_input, buffer, bufftop, curkey
-        .extern stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline, printStrn, printStrNewline
+        .extern interpParseError, stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline, printStrn, printStrNewline
 
         | ENTRY POINT, start of ROM
 main:
         | well, we don't really need ROM yet so jump to RAM ;)
-        jmp ram_start
-        
+        jmp ram_entry_point
 
 
-        
 
-        
-
+        | start of ram
         .data
 
         | place all system vars at the beginning
@@ -153,13 +150,13 @@ main:
         
         | hundredths of versions ;)
         DEFCONST "VERSION", 7, version, 0, #001
-        DEFCONST "R0", 2, rzero, 0, #0x00FFFE00 
+        DEFCONST "R0", 2, rzero, 0, #RSTACK_END
         DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED
         DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN
         DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK
 
         
-ram_start:
+ram_entry_point:
         | initialize I/O stuff (in io.c)
         jsr initIO
         
@@ -168,93 +165,17 @@ ram_start:
         move.l (ps_end), %a6
 
         
-        moveq.l #0, %d0 
         bsr init_latest
         bsr init_cp
         bsr init_uvo
-back:
         bsr init_up
         
-        bsr words
-
-back2:  
-
-        PUSH #'A'
-        bsr tenkloop
-        bsr key
-        bsr depth
-        bsr dot
-        jmp back2
-
-tenkloop:
-        move.l #50000, %d1
-lp:
-        dbra %d1, lp
-        rts
         
-interp_loop:
-        bsr word                        | ( addr len )
-        bsr tdup                        | ( addr len addr len )
-        bsr find                        | ( addr len ptr )
-        tst %d0 
-        beq no_word
-        bsr tcfa
-        bsr execute
-        bra interp_loop
+        moveq.l #0, %d0 
 
 
-no_word:
-        | try parsing number
-        bsr drop
-        | ( addr len )
-        bsr number      | ( number unparsedChars )
-        tst %d0
-        beq interp_error
-        bsr drop        | ( number )
-        bra interp_loop
-        
-interp_error:     
-        POP %d2
-        PUSH #'C'
-        bsr emit
-        PUSH #'o'
-        bsr emit
-        PUSH #'u'
-        bsr emit
-        PUSH #'l'
-        bsr emit
-        PUSH #'d'
-        bsr emit
-        PUSH #'n'
-        bsr emit
-        PUSH #'''
-        bsr emit
-        PUSH #'t'
-        bsr emit
-        PUSH #' '
-        bsr emit
-        PUSH #'f'
-        bsr emit
-        PUSH #'i'
-        bsr emit
-        PUSH #'n'
-        bsr emit
-        PUSH #'d'
-        bsr emit
-        PUSH #' '
-        bsr emit
-        PUSH #'w'
-        bsr emit
-        PUSH #'o'
-        bsr emit
-        PUSH #'r'
-        bsr emit
-        PUSH #'d'
-        bsr emit
-        PUSH #' '
-        bsr cr
-        bra interp_loop
-        
+        bra quit                | jump to interpreter ;)
+
         
         
         .space 16
@@ -503,7 +424,7 @@ push_false:
 
         | status flags are set on the moved data, not the address
         | so we can pop a value off the stack,
-        | and the flags are set for that value already
+        | and the flags are set for that value alfetchy
         | tst.l %d1
         beq push_true
         bra push_false
@@ -598,25 +519,25 @@ bye_loop:
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "@",1,read,0
+        DEFWORD "@",1,fetch,0
         | ( addr -- val )
-        | reads a 32bit value from the given address
+        | fetchs a 32bit value from the given address
         move.l %d0, %a0
         move.l (%a0), %d0
         rts
         
-        DEFWORD "@+",2,readInc,0
+        DEFWORD "@+",2,fetchInc,0
         | ( addr -- val addr+4 )
-        | reads 32-bit values from successive addresses
+        | fetchs 32-bit values from successive addresses
         move.l %d0, %a0
         move.l (%a0), %d1
         move.l %d1, -(%a6)
         addq.l #4, %d0
         rts
         
-        DEFWORD "@-",2,readDec,0
+        DEFWORD "@-",2,fetchDec,0
         | ( addr -- val addr-4 )
-        | reads 32-bit values from decreasing addresses
+        | fetchs 32-bit values from decreasing addresses
         move.l %d0, %a0
         move.l (%a0), %d1
         move.l %d1, -(%a6)
@@ -632,7 +553,7 @@ bye_loop:
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "W@",2,wread,0
+        DEFWORD "W@",2,wfetch,0
         move.l %d0, %a0
         move.w (%a0), %d0
         andi.w #0xFFFF, %d0
@@ -645,10 +566,10 @@ bye_loop:
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "C@",2,cread,0
+        DEFWORD "C@",2,cfetch,0
         move.l %d0, %a0
         move.b (%a0), %d0
-        andi.l #0x000000FF, %d0   | just keep the byte read
+        andi.l #0x000000FF, %d0   | just keep the byte fetch
         rts
         
         DEFWORD "C@C!",4,ccopy,0
@@ -719,12 +640,20 @@ dotPrintLoop:
         DEFWORD "DEPTH",5,depth,0
         | ( -- depth )
         move.l %a6, %d1
-        subi.l #ps_end, %d1
-        neg.l %d1
-        divs #4, %d1
-        andi.l #0x0000FFFF, %d1
-        PUSH %d1
+        move.l #ps_end, %d2
+        sub.l %d1, %d2
+        lsl #2, %d2
+        PUSH %d2
         rts
+
+        DEFWORD "RDEPTH",6,rdepth,0
+        move.l %a7, %d1
+        move.l RSTACK_END, %d2
+        sub.l %d1, %d2
+        lsl #2, %d2
+        PUSH %d2
+        rts
+        
         
         DEFWORD "GOTO",4,goto,0
         move.l %d0, %a0
@@ -760,10 +689,6 @@ dotPrintLoop:
         not.l %d0
         rts
 
-        DEFWORD "EXIT", 4, exit, 0
-        addq #4, %sp
-        rts
-
         DEFWORD "LIT", 3, lit, 0
         move.l (%a7), %a0
         push (%a0)
@@ -771,7 +696,7 @@ dotPrintLoop:
         rts
 
         | won't work inlined!
-        DEFWORD "RSP@",4,rspread,0
+        DEFWORD "RSP@",4,rspfetch,0
         |  r ( something return-addr )
         PUSH %sp
         addq #4, %d0
@@ -800,28 +725,24 @@ dotPrintLoop:
         rts
 
         DEFWORD "KEY",3,key,0
-        bra _key
-afterCallKey:   
-        rts
 
 _key:
         | is buffer empty?
-        move.l curkey, %d1
-        cmp.l bufftop, %d1
+        move.l curkey, %a1
+        move.l bufftop, %a2
+        cmp.l %a2, %a1
 
         
                                 | if curkey == end of buffer, get new line of input
         bge get_new_input
                                 | otherwise grab the next character from the buffer
 
-        | move.l %d0
-        | PUSH (%a0)+
-        move.l (curkey), %a0
-        PUSH (%a0)
-        and.l #0x000000FF, %d0
-                
+        move.b (%a1), %d1
+        andi.l #0x000000FF, %d1
+        PUSH %d1
+        
         addq.l #1, (curkey)
-        bra afterCallKey
+        rts
 
 
         
@@ -894,8 +815,7 @@ get_new_input:
         DEFWORD "WORD",4,word,0
         moveq.l #0, %d1                 | length in d1
         bra get_first_char
-after_get_char:
-        | POP %d2                       
+after_get_word:
         move.l #wordBuffer, %d0         | get rid of space char
         PUSH %d1
         rts
@@ -904,13 +824,18 @@ get_first_char:
                                         | get key on top of stack
         bsr key
         cmpi.b #' ', %d0
-        beq get_first_char
+        bne start_store_chars
+        POP %d2
+        bra get_first_char
 
+start_store_chars:      
         move.l #wordBuffer, %a0
         moveq.l #0, %d1
-store_chars:    
-        move.b %d0, (%a0)+         | pop char into word buffer
-        move.l (%a6)+, %d0
+store_chars:
+
+        POP %d2
+        move.b %d2, (%a0)+      
+        
         addq.b #1, %d1
                 
         RPUSH %a0
@@ -922,7 +847,7 @@ store_chars:
                                         | if not space keep grabbing chars
         bne store_chars
                                         | if found space return address of character and number of characters
-        bra after_get_char
+        bra after_get_word
         
 
 
@@ -941,7 +866,7 @@ store_chars:
         
         DEFWORD "NUMBER",6,number,0
         | ( strAddr strLen --  number #unparsedChars )
-        | parses a string into a string
+        | parses a string into a number
         | returns 0 if error detected
        
         bra _number
@@ -953,7 +878,7 @@ after_get_number:
 _number:
         | move.b (base), %d4      | get base
         bsr base
-        bsr read
+        bsr fetch
         POP %d4                 | place base in d4
         POP %d1                 | place length in d1
         POP %a0                 | place addr in a0
@@ -968,15 +893,15 @@ _number:
         bne number_conv_char
         move.l #-1, %d0         | push something !=0 to indicate negative number
         subq #1, %d1            | if zero, the only character is '-'
-        bne read_digit_loop
+        bne fetch_digit_loop
         moveq.l #0, %d3         | set number to 0
         POP %d5                 | pop -1 off stack
         move.l #1, %d1          | and set unparsed characters to 1
         bra after_get_number      
 
-read_digit_loop:
+fetch_digit_loop:
         muls.w %d4, %d3         | multiply by base
-        move.b (%a0)+, %d5      | read character into d5
+        move.b (%a0)+, %d5      | fetch character into d5
         
 number_conv_char:      
         sub.b #'0', %d5         | subtract '0' char to get number
@@ -994,7 +919,7 @@ number_cmp_base:
 
         add.l %d5, %d3
         subq.l #1, %d1
-        bne read_digit_loop
+        bne fetch_digit_loop
         
 number_negate:
         POP %d6
@@ -1004,8 +929,14 @@ number_negate:
         
 number_end:     
         bra after_get_number
-        
 
+        DEFWORD "IS-IMMEDIATE",12,qimmediate,0
+        | ( dictEntryAddr -- t/f )
+        addq #4, %d0
+        move.l %d0, %a0 
+        move.b (%a0), %d0
+        andi.l #F_IMMED, %d0
+        rts
 
         DEFWORD "MARK",4,mark,0
         move.l #1, (SHADOW_STACK_OFFSET, %a6)             | mark this location in the shadow stack
@@ -1121,9 +1052,8 @@ tcfa_return_addr:
 
         DEFWORD "EXECUTE",7,execute,0
         POP %a0
-        jsr (%a0)
-        rts
-
+        jmp (%a0)
+        
 
 
         DEFWORD "WORDS",5,words,0
@@ -1198,42 +1128,236 @@ _create_update_cp:
         move.w %d1, (%a0)+
         move.l %a0, (loc_cp)
         rts
+
+        DEFWORD "[PUSH]",6,compile_push,0
+        | compiles a literal push onto the stack
+        | todo, more safety
+        PUSH #0x2D00
+        bsr wordComma           | compile `move.l d0, -(a6)`
+        PUSH #0x203C
+        bsr wordComma           | compile PUSH dest (d0)   
+        bra comma               | compile PUSH src (literal)
+        
+        
+
+                
+       
+        
+        
         
         DEFWORD "[",1,lbrac,0
-        | set state to 0
+        | set state to 0, interpret mode
         PUSH #0
         bsr state
         bra store
         
         DEFWORD "]",1,rbrac,0
-        | set state to 1
+        | set state to 1, compile mode
         PUSH #1
         bsr state
         bra store
         
         DEFWORD ":",1,colon,0
-        jsr word
-        jsr create
+        bsr word
+        bsr create
         bra rbrac
 
+        DEFWORD "EXIT",4,exit,0
+        addq #4, %a7
+        jmp (%a7) 
+        
+        
         DEFWORD ";",1,semicolon,F_IMMED
         PUSH #0x4E75
-        jsr wordComma
+        bsr wordComma
+        bsr latest
+        bsr fetch
+        bsr hidden
         bra lbrac
 
+        DEFWORD "IMMEDIATE",9,immediate,F_IMMED
+        move.l (loc_latest), %a0
+        addq #4, %a0
+        eor.b #F_IMMED, (%a0)
+        rts
+
+        DEFWORD "HIDDEN",6,hidden,0
+        POP %a0
+        addq #4, %a0
+        eor.b #F_HIDDEN, (%a0)
+        rts
+
+        DEFWORD "HIDE",4,hide,0
+        bsr word
+        bsr find
+        bra hidden
+        
         DEFWORD "'",1,tick,0
-        jsr word
-        jsr find
+        bsr word
+        bsr find
         bra tcfa
 
+        | todo implement for literal strings
+        | DEFWORD "LITSTRING",9,litstring,0
+
+        
+        DEFWORD "QUIT",4,quit,0
+        move.l #0xFFFE00, %a7           | reset return stack
+        bsr interpret
+        bra quit
+
+        
+        DEFWORD "INTERPRET",0,interpret,0
+        | read word
+        bsr word                        | ( wordAddr wordLen )
+        bsr tdup                        | ( wordAddr wordLen wordAddr wordLen )
+        bsr find                        | ( wordAddr wordLen entryAddr )
+        tst %d0                         | ( wordAddr wordLen entryAddr )         
+        beq interp_not_in_dict
+
+        | in dictionary, is it an immediate word?
+interp_in_dict: 
+        POP %d1                         | d1 == entryAddress
+        POP %d2
+        POP %d2                         | ()
+        
+        bsr dup
+        bsr qimmediate                  | ( entryAddr entryAddr -- entryAddr entryIsImmediate)
+        POP %d2
+        tst %d2
+        beq interp_execute
+        
+        tst (loc_state)
+        bne interp_compile              | 1 == compile, 0 == immediate
+                
+interp_execute:
+        bsr tcfa
+        bra execute
+        
+        
+interp_compile:
+        bsr tcfa
+        
+        
+interp_not_in_dict:
+        POP %d3                                 | trash result of find
+        | try to parse as number
+        bsr number                              | ( wordAddr wordLen )
+        | if number
+        POP %d2
+        tst %d2                                 | 0 == no-error
+        bne interp_parse_error        
+
+        |   if compiling, compile a push
+        move.l (loc_state), %d1                 | 1 == compile
+        bne interp_compile_literal
+        | otherwise, it's on the stack as if we pushed it directly, so just return
+        rts
+
+interp_compile_literal:         
+        bra compile_push                        | ( number -- )
+                
+interp_parse_error:
+        jmp interpParseError
+        
+        
+        | TODO figure out if this is necessary
         DEFWORD "PAD",3,pad,0
         move.l (loc_cp), %d1
         add.l #300, %d1
         PUSH %d1
         rts
+        
+        DEFWORD "TSAVE",3,task_save_area,0
+        | gets the current task's save area
+        PUSH %a5
+        rts
 
+        DEFWORD "TBUFFER",3, terminal_input_buffer,0
+        PUSH %a5
+        add.l #140, %d0
+        rts
+
+        DEFWORD "TVAR",3, user_variable_area,0
+        PUSH %a5
+        add.l #(140+128),%d0
+        | get user_var_area
+
+        DEFWORD "SWITCH",6,switch,0
+        | ( task_num )
+        move.l #16, %d1
+
+        bsr depth
+        cmp.l %d1, %d0
+        bgt pstack_task_switch_error
+
+        bsr rdepth
+        cmp.l %d1, %d0
+        bgt rstack_task_switch_error 
         
         
+        bsr save_current_task_data   | shouldn't touch the current data stack
+        POP %a5
+        bsr load_current_task_data
+        rts
+
+pstack_task_switch_error_string:     
+        .ascii "Too much data on PSTACK to yield!"
+rstack_task_switch_error_string:     
+        .ascii "Too much data on RSTACK to yield!"
+pstack_task_switch_error:
+        PUSH #pstack_task_switch_error_string
+        PUSH #33
+        bsr telln
+ptse_lp:
+        bra ptse_lp
+        
+rstack_task_switch_error:
+        PUSH #rstack_task_switch_error_string
+        PUSH #33
+        bsr telln
+rtse_lp:
+        bra rtse_lp 
+        
+save_current_task_data:
+        | save data for old task
+        | %a5 points to task save area
+        move.l %a5, %a4                 | temp
+        | save registers
+        movem.l %d0/%a6/%a7, (%a4)
+        | save top 16 elements of return stack
+        | and top 16 elements of param stack
+        add.l #12, %a4
+        
+        moveq.l #3, %d1
+        | needs to handle less than 16 elements
+copy_rstack_loop:               
+        move.l (%a7)+, (%a4)+
+        move.l (%a7)+, (%a4)+
+        move.l (%a7)+, (%a4)+
+        move.l (%a7)+, (%a4)+
+        dbra %d1, copy_rstack_loop
+
+        moveq.l #3, %d1
+copy_pstack_loop:
+        | needs to handle less than 16 elements 
+        move.l %d0, (%a4)+
+        move.l (%a6)+, %d0
+        move.l %d0, (%a4)+
+        move.l (%a6)+, %d0
+        move.l %d0, (%a4)+
+        move.l (%a6)+, %d0
+        move.l %d0, (%a4)+
+        move.l (%a6)+, %d0
+        dbra %d1, copy_pstack_loop
+
+        | reset return stack to base
+        move.l %a7, RSTACK_END
+
+load_current_task_data:
+        | load registers
+        | load data stack
+        | load return stack
 
 init_latest:    
         PUSH #LAST_WORD
@@ -1255,17 +1379,20 @@ init_up:
 
 init_ucnt:
         move.l #USER_VAR_COUNT, (loc_user_var_count)
-        
+
         
 
         .space 32768, 'D'               | 32kB space for dictionary
 
+
+        
         
         
 user_variables_start:   
 
         .space 15360, 'U'               | space for 20 user tasks
 
+        
         | Task Save Area, 140 bytes
         | for saving
         | d0, a6, a7  == 12 bytes
