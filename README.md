@@ -1,6 +1,7 @@
 megaforth
 =========
 
-An interactive Forth for the Sega Mega Drive
+A 68000 Forth designed for the Sega Megadrive.
 
-Currently, it only builds on Windows, and it doesn't have a full interpreter yet.
+
+Currently, it requires the SGDK and only builds on Windows.
