@@ -1,5 +1,5 @@
         
-        | subroutine thfetched forth for the megadrive
+        | subroutine threaded forth for the megadrive
 
         | a5 points to the user pointer (for multiple tasks, very useful in games)
         | a6 points to the second to top value on the parameter stack and grows downward
