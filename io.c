@@ -2,6 +2,7 @@
 #include "string.h"
 #include "vdp.h"
 #include "io.h"
+#include "KDebug.h"
 
 
 extern char buffer[WIDTH_TILES];
@@ -86,8 +87,19 @@ char charDowncase(char c) {
   }
 }
 
+static int defMode;
+
+static int initialized=0;
+
 void get_line_of_input() {
   
+  if(initialized == 1) {
+    printStrn("ok.", 3);
+  } else {
+    initialized = 1;
+  }
+
+  defMode = 0;
   incPrintRow();
 
   // reset buffer
@@ -95,27 +107,21 @@ void get_line_of_input() {
     buffer[i] = ' ';
   }
 
-  /* buffer[0] = ':'; */
+  /* buffer[0] = '2'; */
   /* buffer[1] = ' '; */
-  /* buffer[2] = 'S'; */
-  /* buffer[3] = 'Q'; */
-  /* buffer[4] = ' '; */
-  /* buffer[5] = 'D'; */
-  /* buffer[6] = 'U'; */
-  /* buffer[7] = 'P'; */
+  /* buffer[2] = '2'; */
+  /* buffer[3] = ' '; */
+  /* buffer[4] = '+'; */
+  /* buffer[5] = ' '; */
+  /* buffer[6] = '.'; */
   /* buffer[7] = ' '; */
-  /* buffer[7] = '2'; */
-  /* buffer[7] = ' '; */
-  /* buffer[7] = '*'; */
-  /* buffer[7] = ' '; */
-  /* buffer[7] = ';'; */
-  
   
   
   /* bufftop = (u32*)(buffer+WIDTH_TILES); */
   /* curkey  = (u32*)(buffer); */
   /* return; */
   
+
   char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {
     tmpBuffer[i] = ' ';
@@ -198,6 +204,20 @@ void get_line_of_input() {
       cursorCnt = 20;       
     }
     
+    if (diff & BUTTON_MODE) {
+      switch (defMode) {
+      case 0:
+        shiftForward(ptr);
+        tmpBuffer[ptr++] = ':';
+        defMode++;
+        break;
+      case 1:
+        tmpBuffer[ptr++] = ';';
+        defMode++;
+        break;
+      }
+    }
+    
     if (diff & BUTTON_START) {
       break;
     }
@@ -211,6 +231,13 @@ void get_line_of_input() {
     if(diff & BUTTON_B) {
       //read = 1;
       shiftBack(ptr-1);
+
+      char delChar = tmpBuffer[ptr-1];
+      if(delChar == ':') {
+        defMode = 0;
+      } else if (delChar == ';') {
+        defMode = 1;
+      }
       decPtr();
     }
 
@@ -264,7 +291,6 @@ void printChar(char c) {
 }
 
 void printStrn(char* str, u8 strLen) {
-  incPrintRow();
   for(int i = 0; i < strLen; i++) {
     printChar(str[i]);
   }

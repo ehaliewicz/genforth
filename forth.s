@@ -51,6 +51,10 @@
         move.l \reg, -(%a7)
         .endm
 
+        .macro HALT
+halt_loop:
+        bra halt_loop
+        .endm
                 
 
         .macro DEFWORD name, nameLen, label, flags
@@ -122,7 +126,7 @@ loc_\label:
         
         .text
         .globl main, get_line_of_input, buffer, bufftop, curkey
-        .extern interpParseError, stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline, printStrn, printStrNewline
+        .extern stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline, printStrn, printStrNewline
 
         | ENTRY POINT, start of ROM
 main:
@@ -173,11 +177,11 @@ ram_entry_point:
         
         moveq.l #0, %d0 
 
-
-        bra quit                | jump to interpreter ;)
-
+        bsr quit
+| back:
+|         bra back
         
-        
+        .align 4
         .space 16
 ps_overflow:
 
@@ -238,7 +242,7 @@ stackUnderflow:
         
         DEFWORD "DROP",4,drop,0
         | ( a -- )
-        addq.l #4, %a6
+        move.l (%a6)+, %d0
         rts
 
         DEFWORD "DUP",3,dup,0
@@ -307,7 +311,7 @@ stackUnderflow:
         | ( 0 -- )
         | or 
         | ( nonzero -- nonzero nonzero )
-        tst %d0
+        tst.l %d0
         bne qdEnd
         move.l %d0, -(%a6)
 qdEnd:
@@ -364,8 +368,8 @@ qdEnd:
         | should add full word multiplication and division
         
         DEFWORD "*",1,mul,0
-        | ( x y -- x-y )
-        muls (%a6)+, %d0
+        | ( x y -- x*y )
+        muls.w (%a6)+, %d0
         rts
         
         DEFWORD "/MOD",4,divmod,0
@@ -587,7 +591,7 @@ bye_loop:
         pop %d1                 | numBytes in %d1
         pop %a1                 | dest in %a1
         pop %a0                 | src in %a0
-        tst %d1
+        tst.l %d1
         ble cMoveEnd
                                 | get number of longwords to copy, along with remainder
         lsr.l #2, %d1           | divide by 4 (faster and correct because %d1 can't be negative)
@@ -595,13 +599,13 @@ bye_loop:
         andi.l #0x0000FFFF, %d2
         rol.l #8, %d1  
         andi.l #0x0000FFFF,%d1       | remainder in %d1
-        tst %d1
+        tst.l %d1
         beq cMoveLongLoop
 cMoveByte:
         move.b (%a0)+, (%a1)+
         dblt %d1, cMoveByte     | count down the remainder, max 3 bytes copied individually  
 cMoveLong:                      | copy four words at a time ;)
-        tst %d2
+        tst.l %d2
         beq cMoveEnd
 cMoveLongLoop:
         move.l (%a0)+, (%a1)+
@@ -682,7 +686,7 @@ dotPrintLoop:
         rts
 
         DEFWORD "NEGATE", 6, negate,0
-        neg.l %d0
+        negx.l %d0
         rts
         
         DEFWORD "NOT", 3, not, 0
@@ -923,7 +927,7 @@ number_cmp_base:
         
 number_negate:
         POP %d6
-        tst %d6
+        tst.l %d6
         beq number_end
         neg.l %d3
         
@@ -998,7 +1002,7 @@ _find:
 
         | if hidden flag is set, this compare will always fail
         cmp.b %d2, %d1                    | compare lengths
-        bne get_next_entry
+        bne.b get_next_entry
 
 
         | compare strings in detail
@@ -1017,7 +1021,7 @@ entry_found:
         bra after_find
         
 get_next_entry:
-        tst (%a1)
+        tst.l (%a1)
         beq entry_not_found
         move.l (%a1), %a1
         bra _find
@@ -1080,7 +1084,7 @@ words_loop:
         bsr emit
         POP %a1
         
-        tst (%a1)
+        tst.l (%a1)
         beq words_done
         move.l (%a1), %a1
         bra words_loop        
@@ -1102,7 +1106,7 @@ words_done:
         move.b %d1, (%a0)+                      | write name length
 
         
-        subq #1, %d1                            
+        subq.l #1, %d1                            
 _create_char_copy_loop:  
         move (%a2)+, (%a0)+                     | copy char byte
         dbra %d1, _create_char_copy_loop        | branch until d1 (length) == 0
@@ -1200,65 +1204,88 @@ _create_update_cp:
         | todo implement for literal strings
         | DEFWORD "LITSTRING",9,litstring,0
 
+
         
         DEFWORD "QUIT",4,quit,0
         move.l #0xFFFE00, %a7           | reset return stack
         bsr interpret
         bra quit
-
         
-        DEFWORD "INTERPRET",0,interpret,0
+        
+        DEFWORD "INTERPRET",9,interpret,0
         | read word
         bsr word                        | ( wordAddr wordLen )
         bsr tdup                        | ( wordAddr wordLen wordAddr wordLen )
+        
         bsr find                        | ( wordAddr wordLen entryAddr )
-        tst %d0                         | ( wordAddr wordLen entryAddr )         
+        
+        tst.l %d0                         | ( wordAddr wordLen entryAddr )         
         beq interp_not_in_dict
 
         | in dictionary, is it an immediate word?
 interp_in_dict: 
-        POP %d1                         | d1 == entryAddress
-        POP %d2
-        POP %d2                         | ()
-        
+        bsr nrot                        | ( entryAddr wordAddr wordLen )
+        bsr tdrop                       | ( entryAddr )
         bsr dup
-        bsr qimmediate                  | ( entryAddr entryAddr -- entryAddr entryIsImmediate)
+        bsr qimmediate                  | ( entryAddr entryIsImmediate)
         POP %d2
-        tst %d2
-        beq interp_execute
+        tst.l %d2
+        bne interp_execute              | if /= 0, immediate word
         
-        tst (loc_state)
-        bne interp_compile              | 1 == compile, 0 == immediate
+        tst.b (loc_state)                 
+        bne.b interp_compile              | 1 == compile, 0 == immediate
                 
 interp_execute:
         bsr tcfa
         bra execute
         
-        
+        .align 2
+compile_string:
+        .ascii "Compiled word "
+        .align 2
 interp_compile:
         bsr tcfa
+        PUSH #compile_string
+        PUSH #13
+        bra tell
+        
         
         
 interp_not_in_dict:
-        POP %d3                                 | trash result of find
+        bsr drop                                | ( wordAddr wordLen ) trash result of find
         | try to parse as number
-        bsr number                              | ( wordAddr wordLen )
+        bsr tdup                                | ( wordAddr wordLen wordAddr wordLen )
+        bsr number                              | ( wordAddr wordLen number success )
         | if number
         POP %d2
-        tst %d2                                 | 0 == no-error
+        tst.l %d2                                 | 0 == no-error
         bne interp_parse_error        
 
         |   if compiling, compile a push
+        POP %d2
+        bsr tdrop
+        PUSH %d2
         move.l (loc_state), %d1                 | 1 == compile
         bne interp_compile_literal
         | otherwise, it's on the stack as if we pushed it directly, so just return
         rts
 
 interp_compile_literal:         
-        bra compile_push                        | ( number -- )
-                
+        bsr compile_push                        | ( number -- )
+        PUSH #compile_string
+        PUSH #13
+        bra tell
+        
+        .align 2
+ip_error_string:
+        .ascii "Couldnt parse "
+        .align 2
 interp_parse_error:
-        jmp interpParseError
+        PUSH #ip_error_string
+        PUSH #14
+        bsr telln
+        bsr telln
+        rts
         
         
         | TODO figure out if this is necessary
@@ -1268,17 +1295,17 @@ interp_parse_error:
         PUSH %d1
         rts
         
-        DEFWORD "TSAVE",3,task_save_area,0
+        DEFWORD "TSAVE",5,task_save_area,0
         | gets the current task's save area
         PUSH %a5
         rts
 
-        DEFWORD "TBUFFER",3, terminal_input_buffer,0
+        DEFWORD "TBUFFER",7, terminal_input_buffer,0
         PUSH %a5
         add.l #140, %d0
         rts
 
-        DEFWORD "TVAR",3, user_variable_area,0
+        DEFWORD "TVAR",4, user_variable_area,0
         PUSH %a5
         add.l #(140+128),%d0
         | get user_var_area
@@ -1382,11 +1409,43 @@ init_ucnt:
 
         
 
-        .space 32768, 'D'               | 32kB space for dictionary
+        .space 32768, 'D'                       | 32kB space for dictionary
 
 
         
+
+|| prefix_cur_ptr:
+||         .space 4
+|| prefix_cur_result:
+||         .space 4
+|| prefix_match_struct:
+||         .space 1                                | num chars
+||         .space 32                               | up to 32 chars to match
+
+|| prefix_match:   
+||         move.l (loc_latest), %a0
+||         move.l %a0, (prefix_cur_ptr)                   | save cur_ptr
+|| resume_prefix_match:
+||         moveq.l #0, %d1                         | character offset in d1
+||         move.l prefix_match_struct, %a1         | match info in a1, current entry in a0
+||         | check length of prefix
+||         move.l (%a1), %d3                       | length of prefix in d3
+||         move.l (%a0), %d2                       | length of entry in d2
+||         cmp.b %d2, %d3                          | name not long enough?
+||         blt prefix_get_next_entry
+|| prefix_match_chars:    
+||         addq.l #1, %d1
+||         cmp.b 0(%d1, %a0), 0(%d1, %a1)
+||         bne prefix_get_next_entry
+||         dbeq %d3, resume_prefix_match
+
+|| prefix_found_match:
+||         move.l (%a0), (prefix_cur_result)
         
+|| prefix_get_next_entry:
+||         move.l (%a0), (prefix_cur_ptr)   | save offset
+||         bra resume_prefix_match
+
         
 user_variables_start:   
 
