@@ -7,7 +7,7 @@
 
 #define WIDTH_TILES 38
 #define HEIGHT_TILES 28
-
+#define HEIGHT_INPUT 28 //18
 
 void initIO();
 void clearScreen();

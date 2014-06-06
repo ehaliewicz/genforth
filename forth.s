@@ -63,7 +63,7 @@ halt_loop:
         .set LAST_WORD, LAST_WORD_2
         .byte \nameLen+\flags
         .ascii "\name"
-        .align 2
+        .balign 2
 \label:
         .endm
 
@@ -125,7 +125,7 @@ loc_\label:
 
         
         .text
-        .globl main, get_line_of_input, buffer, bufftop, curkey
+        .globl main, get_line_of_input, buffer, bufftop, curkey, loc_latest
         .extern stackOverflowError, stackPointer, rStackPointer, tosDump, torsDump, printChar, initIO, printNewline, printStrn, printStrNewline
 
         | ENTRY POINT, start of ROM
@@ -139,7 +139,7 @@ main:
         .data
 
         | place all system vars at the beginning
-        DEFSYSVAR "CP",4,cp,0,0
+        DEFSYSVAR "CP",2,cp,0,0
         DEFSYSVAR "LATEST",6,latest,0,0
         DEFSYSVAR "UOFF",4,user_var_offset,0,0
         DEFSYSVAR "UCNT",4,user_var_count,0,0
@@ -173,15 +173,14 @@ ram_entry_point:
         bsr init_cp
         bsr init_uvo
         bsr init_up
-        
-        
+
         moveq.l #0, %d0 
 
-        bsr quit
-| back:
-|         bra back
+        bsr quit 
+
         
-        .align 4
+        
+        .balign 4
         .space 16
 ps_overflow:
 
@@ -196,7 +195,7 @@ ps_end_var:
 shadow_stack:
         
         
-        .align 2        
+        .balign 2        
         | word buffer
 wordBuffer:     
         .space 38, ' '
@@ -208,7 +207,7 @@ curkey:
         | ptr to end of input in key buffer
 bufftop:
         dc.l buffer
-        .align 2
+        .balign 2
         | input buffer
 buffer:
         .space 38, ' ' | 38 character buffer (screen width w/ 1 char margin on each side)
@@ -1012,10 +1011,12 @@ _find:
         | move.l %d1, %d2                 | make copy of length
         subq #1, %d2
 
-tst_loop:       
+| loop_back:      
+|        bra loop_back
+tst_loop:
         cmp.b (%a2)+, (%a3)+
         bne get_next_entry     
-        dble %d2, tst_loop              | if dbra is zero 
+        dbra %d2, tst_loop              | if dbra is zero 
         
 entry_found:    
         bra after_find
@@ -1054,10 +1055,11 @@ tcfa_return_addr:
         rts
 
 
+
         DEFWORD "EXECUTE",7,execute,0
         POP %a0
-        jmp (%a0)
-        
+        jsr (%a0)
+        rts
 
 
         DEFWORD "WORDS",5,words,0
@@ -1108,14 +1110,14 @@ words_done:
         
         subq.l #1, %d1                            
 _create_char_copy_loop:  
-        move (%a2)+, (%a0)+                     | copy char byte
+        move.b (%a2)+, (%a0)+                     | copy char byte
         dbra %d1, _create_char_copy_loop        | branch until d1 (length) == 0
         move.l %a0, %d1
         btst #0, %d1                            | if least significant bit is 0, we're aligned to 2byte boundary
-        bra _create_update_cp
+        beq _create_update_cp
         addq.l #1, %a0
 _create_update_cp:
-        move %a0, (loc_cp)
+        move.l %a0, (loc_cp)
         rts
 
         
@@ -1131,6 +1133,18 @@ _create_update_cp:
         move.l (loc_cp), %a0
         move.w %d1, (%a0)+
         move.l %a0, (loc_cp)
+        rts
+
+        DEFWORD "<JSR>",5,cjsr,0
+        | ( addr -- )
+        POP %d1
+        move.l (loc_cp), %a2
+        sub.l %a2, %d1
+        subq.l #2, %d1
+        move.w #0x4EBA, (%a2)+
+        move.l %d1, (%a2)+
+        move.l %a2, (loc_cp)
+        
         rts
 
         DEFWORD "[PUSH]",6,compile_push,0
@@ -1160,7 +1174,7 @@ _create_update_cp:
         PUSH #1
         bsr state
         bra store
-        
+
         DEFWORD ":",1,colon,0
         bsr word
         bsr create
@@ -1227,22 +1241,22 @@ interp_in_dict:
         bsr nrot                        | ( entryAddr wordAddr wordLen )
         bsr tdrop                       | ( entryAddr )
         bsr dup
-        bsr qimmediate                  | ( entryAddr entryIsImmediate)
+        bsr qimmediate                  | ( entryAddr entryIsImmediate )
         POP %d2
         tst.l %d2
         bne interp_execute              | if /= 0, immediate word
         
         tst.b (loc_state)                 
-        bne.b interp_compile              | 1 == compile, 0 == immediate
+        bne interp_compile              | 1 == compile, 0 == immediate
                 
 interp_execute:
         bsr tcfa
         bra execute
         
-        .align 2
+        .balign 2
 compile_string:
         .ascii "Compiled word "
-        .align 2
+        .balign 2
 interp_compile:
         bsr tcfa
         PUSH #compile_string
@@ -1276,18 +1290,18 @@ interp_compile_literal:
         PUSH #13
         bra tell
         
-        .align 2
+        .balign 2
 ip_error_string:
         .ascii "Couldnt parse "
-        .align 2
+        .balign 2
 interp_parse_error:
         PUSH #ip_error_string
         PUSH #14
         bsr telln
         bsr telln
         rts
-        
-        
+
+
         | TODO figure out if this is necessary
         DEFWORD "PAD",3,pad,0
         move.l (loc_cp), %d1
@@ -1392,8 +1406,7 @@ init_latest:
         rts
 
 init_cp:        
-        PUSH #.+24
-        move.l #.+24, (loc_cp)
+        move.l #start_user_dict, (loc_cp)
         rts
 
 init_uvo:
@@ -1408,7 +1421,7 @@ init_ucnt:
         move.l #USER_VAR_COUNT, (loc_user_var_count)
 
         
-
+start_user_dict:        
         .space 32768, 'D'                       | 32kB space for dictionary
 
 

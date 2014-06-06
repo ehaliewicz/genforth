@@ -22,7 +22,7 @@ void initIO() {
 }
 
 void clearScreen() {
-  for(int i = 0; i < HEIGHT_TILES; i++) {
+  for(int i = 0; i < HEIGHT_INPUT; i++) {
     VDP_clearTextLine(i);
   }
 }
@@ -38,7 +38,7 @@ void scrollDown() {
 void incPrintRow() {
   printRow++;
   printCol = 1;
-  if(printRow >= HEIGHT_TILES) {
+  if(printRow >= HEIGHT_INPUT) {
     clearScreen();
     printRow = 0;
     printCol = 1;
@@ -87,9 +87,83 @@ char charDowncase(char c) {
   }
 }
 
+
+extern u32 **loc_latest;
+static u32 *cur_entry;
+static int prefix_cnt, failed_match, clear_cnt;
+
+
+void resetPrefixSearch() {
+  cur_entry = *loc_latest;
+  failed_match = 0;
+  prefix_cnt = 0;
+  clear_cnt = 0;
+}
+
+
+
+// returns a pointer to the next entry that matches the given prefix
+u32* prefixMatch(char* word, u32 wordLen) {
+  u8 nameLen;
+  char* entryWord;
+
+  
+ check_match:
+  nameLen = *(((u8*)cur_entry)+4);
+  
+  if(nameLen < wordLen) {
+    // continue onto next entry
+    goto get_next;
+  } else {
+    entryWord = ((u8*)cur_entry)+5;
+    // try to match characters
+    for(int i = 0; i < wordLen; i++) {
+      if(entryWord[i] != word[i]) {
+        goto get_next;
+      }
+    }
+    u32* res_entry = cur_entry;
+    cur_entry = *((u32**)cur_entry);
+    return res_entry;
+    
+  }
+  
+ get_next:
+  // dereference link
+  cur_entry = *((u32**)cur_entry);
+  if(cur_entry) {
+    goto check_match; 
+  } else {
+    goto no_match;
+  }
+  
+ no_match:
+  failed_match = 1;
+  return NULL;
+
+}
+
+/* int oskX, oskY; */
+/* void drawOsk() { */
+/*   u8 ascii_cnt = 33; */
+/*   char str[2] = {' ', '\0'}; */
+/*   for(int y = HEIGHT_INPUT+1; y < HEIGHT_TILES; y+=2) { */
+/*     for(int x = 0; x < 40; x+=2) { */
+/*       str[0] = ascii_cnt++; */
+/*       VDP_drawText(str,x,y); */
+/*       if(ascii_cnt >= 128) { return; } */
+/*     } */
+/*   } */
+  
+/* } */
+
+
+
+
 static int defMode;
 
 static int initialized=0;
+static int used = 0;
 
 void get_line_of_input() {
   
@@ -106,37 +180,33 @@ void get_line_of_input() {
   for(int i = 0; i < WIDTH_TILES-1; i++) {
     buffer[i] = ' ';
   }
+  if(used == 0) {
 
-  /* buffer[0] = '2'; */
-  /* buffer[1] = ' '; */
-  /* buffer[2] = '2'; */
-  /* buffer[3] = ' '; */
-  /* buffer[4] = '+'; */
-  /* buffer[5] = ' '; */
-  /* buffer[6] = '.'; */
-  /* buffer[7] = ' '; */
+  buffer[0] = '3';
+  buffer[1] = '3';
+  buffer[2] = ' ';
+  buffer[3] = ' ';
+  buffer[4] = ' ';
+  buffer[5] = ' ';
+  buffer[6] = ' ';
+  buffer[7] = ' ';
   
   
-  /* bufftop = (u32*)(buffer+WIDTH_TILES); */
-  /* curkey  = (u32*)(buffer); */
-  /* return; */
   
+  bufftop = (u32*)(buffer+WIDTH_TILES);
+  curkey  = (u32*)(buffer);
+  used = 1;
+  return;
+  }
 
   char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {
     tmpBuffer[i] = ' ';
   }
-  tmpBuffer[0] = 'F';
-  tmpBuffer[1] = 'O';
-  tmpBuffer[2] = 'R';
-  tmpBuffer[3] = 'T';
-  tmpBuffer[4] = 'H';
-  tmpBuffer[5] = '>';
-  tmpBuffer[6] = ' ';
 
   tmpBuffer[WIDTH_TILES] = '\0';
   
-  int minPtr = 7;
+  int minPtr = 0;
   int ptr = minPtr;
 
   void incPtr(){
@@ -167,41 +237,39 @@ void get_line_of_input() {
 
 
   u16 lastState = JOY_readJoypad(JOY_1);
-  //int read = 0;
+  
   while(1) {
     VDP_waitVSync();
     u16 state = JOY_readJoypad(JOY_1);
     
     u16 diff = (state ^ lastState) & state;
-    /* if (read >= 1 && read < 10) { */
-    /*   read++; */
-    /*   continue\; */
-    /* } else { */
-    /*   read = 0; */
-    /* } */
 
     if(diff & BUTTON_LEFT) {
       
       //read = 1;
       decPtr();
       cursorCnt = 20;
-
+      resetPrefixSearch();
+      
     } else if (diff & BUTTON_RIGHT) {
       //read = 1;
       incPtr();
       cursorCnt = 20;
+      resetPrefixSearch();
     }
 
     else if (diff & BUTTON_UP) {
       //read = 1;
       tmpBuffer[ptr]++;
       cursorCnt = 20;    
+      resetPrefixSearch();
     }
 
     else if (diff & BUTTON_DOWN) {
       //read = 1;
       tmpBuffer[ptr]--;
-      cursorCnt = 20;       
+      cursorCnt = 20;
+      resetPrefixSearch();
     }
     
     if (diff & BUTTON_MODE) {
@@ -219,13 +287,15 @@ void get_line_of_input() {
     }
     
     if (diff & BUTTON_START) {
+      resetPrefixSearch();
       break;
     }
     
     if(diff & BUTTON_A) {
       //read = 1;
       tmpBuffer[ptr] = 'A'; 
-      cursorCnt = 20;        
+      cursorCnt = 20;     
+      resetPrefixSearch();
     }
     
     if(diff & BUTTON_B) {
@@ -239,6 +309,7 @@ void get_line_of_input() {
         defMode = 1;
       }
       decPtr();
+      resetPrefixSearch();
     }
 
     if(diff & BUTTON_C) {
@@ -246,6 +317,48 @@ void get_line_of_input() {
       shiftForward(ptr);
       tmpBuffer[ptr] = ' ';
       incPtr();
+      resetPrefixSearch();
+    }
+
+    if(diff & BUTTON_X) {  
+
+      int cnt = 0;
+      
+      if(tmpBuffer[ptr] == ' ') {
+        continue;
+      }
+      
+    
+      
+      while(1) {
+        if(tmpBuffer[ptr+cnt] == ' ') {
+          break;
+        }
+        cnt++;
+      }
+      if(prefix_cnt == 0) {
+        prefix_cnt = cnt;
+      }
+      u32* res = prefixMatch(tmpBuffer+ptr, prefix_cnt);
+      if(res) {
+        u8 entryWordLen = *(((u8*)res)+4);
+        char* entryWord = ((u8*)res)+5;
+        if(entryWordLen > clear_cnt) {
+          clear_cnt = entryWordLen;
+        }
+        for(int i = 0; i < clear_cnt; i++) {
+          tmpBuffer[ptr+i] = ' ';
+        }
+        for(int i = 0; i < entryWordLen; i++) {
+          //shiftForward(ptr+i+1);
+          tmpBuffer[ptr+i] = entryWord[i];
+        }
+      }
+    }
+
+    if(state & BUTTON_Y) {
+      //drawOsk();
+      continue;
     }
     
     VDP_clearTextLine(printRow+1);
@@ -271,8 +384,6 @@ void get_line_of_input() {
   curkey  = (u32*)(buffer);
   
 }
-
-
 
 
 void printChar(char c) {
