@@ -1,6 +1,7 @@
 #include "genesis.h"
 #include "string.h"
 #include "vdp.h"
+#include "vdp_bg.h"
 #include "io.h"
 #include "KDebug.h"
 
@@ -10,21 +11,41 @@ extern u32 *bufftop, *curkey;
 
 static int printCol, printRow;
 
+static int height_tiles = HEIGHT_TILES;
+static int height_input = HEIGHT_INPUT_NO_OSK;
 
+static u16 inputPlan;
+static u16 oskPlan;
+static int displayingOsk = 0;
+static u16 inputFlags;
+static u16 oskFlags;
+
+void drawOsk();
+void initCursorSprite();
 
 void initIO() {
-
+  inputPlan = APLAN;
+  inputFlags = TILE_ATTR(PAL0,0,0,0);
+  
+  oskPlan = BPLAN;
+  oskFlags = TILE_ATTR(PAL2,0,0,0);
+    
   VDP_init();
   JOY_init();
+  initCursorSprite();
   printCol = 1;
   printRow = 0;
-  
+  VDP_setTextPlan(inputPlan);
 }
 
 void clearScreen() {
-  for(int i = 0; i < HEIGHT_INPUT; i++) {
-    VDP_clearTextLine(i);
+  VDP_clearPlan(inputPlan, 1);
+  VDP_clearPlan(oskPlan, 1);
+  
+  if(displayingOsk == 1) {
+    drawOsk();
   }
+  VDP_waitVSync();
 }
 
 void scrollUp() {
@@ -38,7 +59,7 @@ void scrollDown() {
 void incPrintRow() {
   printRow++;
   printCol = 1;
-  if(printRow >= HEIGHT_INPUT) {
+  if(printRow >= height_input) {
     clearScreen();
     printRow = 0;
     printCol = 1;
@@ -143,28 +164,190 @@ u32* prefixMatch(char* word, u32 wordLen) {
 
 }
 
-/* int oskX, oskY; */
-/* void drawOsk() { */
-/*   u8 ascii_cnt = 33; */
-/*   char str[2] = {' ', '\0'}; */
-/*   for(int y = HEIGHT_INPUT+1; y < HEIGHT_TILES; y+=2) { */
-/*     for(int x = 0; x < 40; x+=2) { */
-/*       str[0] = ascii_cnt++; */
-/*       VDP_drawText(str,x,y); */
-/*       if(ascii_cnt >= 128) { return; } */
-/*     } */
-/*   } */
+int oskX, oskY;
+void drawOsk() {
+  height_input = HEIGHT_INPUT_OSK;
   
-/* } */
+  //VDP_setTextPlan(oskPlan);
+  
+  u8 ascii_cnt = 33;
+  char str[2] = {' ', '\0'};
+  for(int y = height_input; y < height_tiles; y+=2) {
+    for(int x = 1; x < WIDTH_TILES; x+=2) {
+      str[0] = ascii_cnt++;
+      VDP_drawTextBG(oskPlan, str, oskFlags, x, y);
+      if(ascii_cnt >= 128) { return; }
+    }
+  }
+
+
+  if(printRow >= HEIGHT_INPUT_OSK) {
+    clearScreen();
+    printRow = 0;
+    printCol = 1;
+  }
+  
+  
+}
+
+void clearOsk() {
+  VDP_clearPlan(oskPlan, 1);
+  height_input = HEIGHT_INPUT_NO_OSK;
+  VDP_resetSprites();
+  VDP_waitVSync();
+}
 
 
 
-
+static int ptr;
+static int minPtr = 0;
+static char tmpBuffer[WIDTH_TILES+1];
 static int defMode;
+
+void incPtr(){
+  ptr++;
+  if (ptr >= WIDTH_TILES) {
+    ptr = minPtr;
+  }
+}
+
+void decPtr() {
+  ptr--;
+  if(ptr < minPtr) {
+    ptr = WIDTH_TILES-1;
+  }
+}
+  
+void shiftBack(int start) {
+  for(int i = start; i < WIDTH_TILES-1; i++) {
+    tmpBuffer[i] = tmpBuffer[i+1];
+  }
+} 
+  
+void shiftForward(int start) {
+  for(int i = WIDTH_TILES-2; i >= start; i--) {
+    tmpBuffer[i+1] = tmpBuffer[i];
+  }
+}
+
+
+
+void handleOskInput(u16 state, u16 diff) {
+  
+  if(diff & BUTTON_Y) { 
+    clearOsk();
+    displayingOsk = 0;
+    return;
+  }
+  
+  if(diff & BUTTON_A) { 
+    // place selected key in buffer
+    // increment cursor pointer
+    tmpBuffer[ptr] = 'A';
+    resetPrefixSearch();
+  }
+
+  if(diff & BUTTON_B) {
+    // delete character in buffer[ptr-1]
+    // shift rest of characters left
+    shiftBack(ptr-1);
+    
+    char delChar = tmpBuffer[ptr-1];
+    if(delChar == ':') {
+      defMode = 0;
+    } else if (delChar == ';') {
+      defMode = 1;
+    }
+    decPtr();
+    resetPrefixSearch();
+  }
+  
+  if(diff & BUTTON_C) {
+    // shift characters starting at buffer[ptr] right
+    // insert space in buffer[ptr]
+    shiftForward(ptr);
+    tmpBuffer[ptr] = ' ';
+    incPtr();
+    resetPrefixSearch();
+  }
+  
+  // wrap-around
+  if(diff & BUTTON_UP) {
+    oskY = (oskY-1) % 5;
+    if(oskY < 0) {
+      oskY = 4;
+    }
+  }
+
+  
+  if(diff & BUTTON_DOWN) {
+    oskY = (oskY+1);
+    if(oskY >= 5) {
+      oskY = 0;
+    }
+  }
+  
+  if(diff & BUTTON_LEFT) {
+    oskX = (oskX-1);
+    if(oskX < 0) {
+      oskX = 18;
+    }
+  }
+
+  if(diff & BUTTON_RIGHT) {
+    oskX = (oskX+1) % 19; 
+  }
+  
+  
+  
+  
+}
+
+
+
+// 4x4 is base tile size
+const u32 spriteTiles[4*8] =
+  {
+    
+    0x00800000,
+    0x00880000,
+    
+    0x00888000,
+    0x00888800,  
+    
+    0x00888880,
+    0x00888888,
+    
+    0x00888800,
+    0x00800000
+  };
+
+void initCursorSprite() {
+  // load into position 1? in vram
+  // data, vram offset, num_tiles, use_dma
+  VDP_loadTileData((const u32*)spriteTiles, 1, 4, 0);
+  
+  
+}
+
+void drawOskCursor() {
+  int x = (1+(oskX * 2)) * 8;
+  int y = (HEIGHT_INPUT_OSK + (oskY * 2)) * 8;
+  // update position
+  VDP_setSprite(0, x+4, y+6, SPRITE_SIZE(1,1), TILE_ATTR_FULL(PAL0,1,0,0,1), 0);
+  // draw
+  VDP_updateSprites();
+}
+      
+
 
 static int initialized=0;
 static int used = 0;
 
+
+// when on-screen keyboard is running
+// d-pad selects keys, and doesn't move the cursor
+//
 void get_line_of_input() {
   
   if(initialized == 1) {
@@ -180,60 +363,35 @@ void get_line_of_input() {
   for(int i = 0; i < WIDTH_TILES-1; i++) {
     buffer[i] = ' ';
   }
-  if(used == 0) {
+  
+  // dummy data
+  /* if(used == 0) { */
 
-  buffer[0] = '3';
-  buffer[1] = '3';
-  buffer[2] = ' ';
-  buffer[3] = ' ';
-  buffer[4] = ' ';
-  buffer[5] = ' ';
-  buffer[6] = ' ';
-  buffer[7] = ' ';
+  /* buffer[0] = '3'; */
+  /* buffer[1] = '3'; */
+  /* buffer[2] = ' '; */
+  /* buffer[3] = ' '; */
+  /* buffer[4] = ' '; */
+  /* buffer[5] = ' '; */
+  /* buffer[6] = ' '; */
+  /* buffer[7] = ' '; */
   
   
   
-  bufftop = (u32*)(buffer+WIDTH_TILES);
-  curkey  = (u32*)(buffer);
-  used = 1;
-  return;
-  }
+  /* bufftop = (u32*)(buffer+WIDTH_TILES); */
+  /* curkey  = (u32*)(buffer); */
+  /* used = 1; */
+  /* return; */
+  /* } */
 
-  char tmpBuffer[WIDTH_TILES+1];
+  //char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {
     tmpBuffer[i] = ' ';
   }
 
   tmpBuffer[WIDTH_TILES] = '\0';
   
-  int minPtr = 0;
-  int ptr = minPtr;
-
-  void incPtr(){
-    ptr++;
-    if (ptr >= WIDTH_TILES) {
-      ptr = minPtr;
-    }
-  }
-
-  void decPtr() {
-    ptr--;
-    if(ptr < minPtr) {
-      ptr = WIDTH_TILES-1;
-    }
-  }
-  
-  void shiftBack(int start) {
-    for(int i = start; i < WIDTH_TILES-1; i++) {
-      tmpBuffer[i] = tmpBuffer[i+1];
-    }
-  } 
-  
-  void shiftForward(int start) {
-    for(int i = WIDTH_TILES-2; i >= start; i--) {
-      tmpBuffer[i+1] = tmpBuffer[i];
-    }
-  }
+  ptr = minPtr;
 
 
   u16 lastState = JOY_readJoypad(JOY_1);
@@ -244,6 +402,22 @@ void get_line_of_input() {
     
     u16 diff = (state ^ lastState) & state;
 
+
+    // needs to come first to intercept other keypresses
+    if(displayingOsk == 1) {
+      // while z is held down && osk is displayed
+      // select key from keyboard
+      
+      // pass input buffer and cursor pointer, along with gamepad info
+      drawOskCursor(1);
+      handleOskInput(state, diff);
+      drawOskCursor(0);
+      
+      // skip rest of loop iteration
+      goto end_loop_iter;
+    }
+    
+    
     if(diff & BUTTON_LEFT) {
       
       //read = 1;
@@ -329,7 +503,7 @@ void get_line_of_input() {
       }
       
     
-      
+      // skip spaces
       while(1) {
         if(tmpBuffer[ptr+cnt] == ' ') {
           break;
@@ -356,16 +530,26 @@ void get_line_of_input() {
       }
     }
 
-    if(state & BUTTON_Y) {
-      //drawOsk();
-      continue;
+    if(diff & BUTTON_Y) {
+      
+
+      // toggle on-screen keyboard
+      if(displayingOsk == 1) {
+        // control should never reach this code
+        clearOsk();
+        displayingOsk = 0;
+      } else {
+        drawOsk();
+        displayingOsk = 1;
+      }
     }
-    
+   
+  end_loop_iter:
     VDP_clearTextLine(printRow+1);
-    VDP_drawText(&tmpBuffer[0], 1, printRow);
+    VDP_drawTextBG(inputPlan, &tmpBuffer[0], inputFlags, 1, printRow);
     
     if(printCursor()) {
-      VDP_drawText("-", ptr+1, printRow+1);
+      VDP_drawTextBG(inputPlan, "-", inputFlags, ptr+1, printRow+1);
     }
     
     lastState = state;
@@ -395,7 +579,7 @@ void printChar(char c) {
     str[0] = c;
     str[1] = '\0';
     
-    VDP_drawText(str, printCol, printRow);
+    VDP_drawTextBG(inputPlan, str, inputFlags, printCol, printRow);
     
     incPrintCol();
   }

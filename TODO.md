@@ -3,27 +3,9 @@ primitive (code) words
 
 CHAR (gets character code of a character following this word in the iinput stream)
 
-FIND (searches dictionary for matching entries)
-
-\>CFA (gets code address from dictionary header)
-
-CREATE (creates a dictionary header)
-
-, (comma) compiles a word address into a jump instruction at the current dictionary slot
-
-[, ], :, and ;  (various tools for handling dictionary entries)
-
-IMMEDIATE, HIDDEN, HIDE (for setting flags on dictonary entries)
-
-' (tick) gets code address of word
-
-EXECUTE (executes a code address)
-
 LITSTRING   PUSHES a string address on te stack (usually the string is compiled inline in the instruction stream) 
 
-QUIT        (returns to interpreter)
-
-INTERPRET   (evaluates lines of input, finds words (jumping to them or compiling their addresses) or numbers (either pushing them on stack or compiling to inline pushes) 
+<JSR> compiles jump
 
 
 colon words
@@ -51,13 +33,5 @@ BEGIN, UNTIL, REPEAT, DO, etc (loop words)
 (, ) (comments are delimited by parens)
 
 
-other words
------------
 
-mark (marks a location in a shadow stack)
-
-clear-to-mark (clear stack until the stack pointer matches the first mark in the shadow stack)
-
-clear (clear entire data stack)
-
-count-to-mark (counts number of slots used above the last mark on the data stack)
+clean up input code
