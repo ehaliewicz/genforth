@@ -176,9 +176,7 @@ ram_entry_point:
 
         moveq.l #0, %d0 
 
-        bsr quit 
-
-        
+        bra quit
         
         .balign 4
         .space 16
@@ -368,7 +366,9 @@ qdEnd:
         
         DEFWORD "*",1,mul,0
         | ( x y -- x*y )
-        muls.w (%a6)+, %d0
+        move.l (%a6)+, %d1
+        muls.w %d1, %d0
+        
         rts
         
         DEFWORD "/MOD",4,divmod,0
@@ -1042,7 +1042,7 @@ entry_not_found:
         | padding (0 or more bytes)
         moveq.l #0, %d1
         POP %a0                 | pointer to prev link in a0
-        addq #4, %a0            | pointer to namelen
+        addq.l #4, %a0          | pointer to namelen
         move.b (%a0), %d1       |
         addq #1, %a0
         andi.b #F_LENMASK, %d1  | name len in d1
@@ -1098,7 +1098,7 @@ words_done:
         DEFWORD "CREATE",6,create,0
         | creates a new header in dictionary
 
-        move.l (loc_cp), %a0                  | grab pointer to last entry
+        move.l (loc_cp), %a0                    | grab pointer to last entry
         move.l (loc_latest), %a1                | grab next word slot in dictionary
         POP %d1                                 | get name length
         POP %a2                                 | get name address
@@ -1115,7 +1115,8 @@ _create_char_copy_loop:
         move.l %a0, %d1
         btst #0, %d1                            | if least significant bit is 0, we're aligned to 2byte boundary
         beq _create_update_cp
-        addq.l #1, %a0
+        move.b #0, (%a0)+
+        |#addq.l #1, %a0
 _create_update_cp:
         move.l %a0, (loc_cp)
         rts
@@ -1139,14 +1140,12 @@ _create_update_cp:
         | ( addr -- )
         POP %d1
         move.l (loc_cp), %a2
-        sub.l %a2, %d1
-        subq.l #2, %d1
-        move.w #0x4EBA, (%a2)+
+        move.w #0x4EB9, (%a2)+
         move.l %d1, (%a2)+
         move.l %a2, (loc_cp)
-        
         rts
 
+        
         DEFWORD "[PUSH]",6,compile_push,0
         | compiles a literal push onto the stack
         | todo, more safety
@@ -1165,19 +1164,20 @@ _create_update_cp:
         
         DEFWORD "[",1,lbrac,0
         | set state to 0, interpret mode
-        PUSH #0
-        bsr state
-        bra store
+        move.b #0, (loc_state)
+        rts
         
         DEFWORD "]",1,rbrac,0
         | set state to 1, compile mode
-        PUSH #1
-        bsr state
-        bra store
-
+        move.b #1, (loc_state)
+        rts
+        
         DEFWORD ":",1,colon,0
         bsr word
         bsr create
+        bsr latest
+        bsr fetch
+        bsr hidden
         bra rbrac
 
         DEFWORD "EXIT",4,exit,0
@@ -1195,13 +1195,13 @@ _create_update_cp:
 
         DEFWORD "IMMEDIATE",9,immediate,F_IMMED
         move.l (loc_latest), %a0
-        addq #4, %a0
+        addq.l #4, %a0
         eor.b #F_IMMED, (%a0)
         rts
 
         DEFWORD "HIDDEN",6,hidden,0
         POP %a0
-        addq #4, %a0
+        addq.l #4, %a0
         eor.b #F_HIDDEN, (%a0)
         rts
 
@@ -1251,17 +1251,24 @@ interp_in_dict:
                 
 interp_execute:
         bsr tcfa
-        bra execute
+        | bra execute
+        POP %a0
+        jmp (%a0)
         
         .balign 2
 compile_string:
         .ascii "Compiled word "
         .balign 2
+compile_number:
+        .ascii "Compiled push "
+        .balign 2
 interp_compile:
         bsr tcfa
-        PUSH #compile_string
-        PUSH #13
-        bra tell
+        bsr cjsr
+        | PUSH #compile_string
+        | PUSH #13
+        | bra tell
+        rts
         
         
         
@@ -1286,9 +1293,10 @@ interp_not_in_dict:
 
 interp_compile_literal:         
         bsr compile_push                        | ( number -- )
-        PUSH #compile_string
-        PUSH #13
-        bra tell
+        | PUSH #compile_number
+        | PUSH #13
+        | bra tell
+        rts
         
         .balign 2
 ip_error_string:
@@ -1425,41 +1433,7 @@ start_user_dict:
         .space 32768, 'D'                       | 32kB space for dictionary
 
 
-        
-
-|| prefix_cur_ptr:
-||         .space 4
-|| prefix_cur_result:
-||         .space 4
-|| prefix_match_struct:
-||         .space 1                                | num chars
-||         .space 32                               | up to 32 chars to match
-
-|| prefix_match:   
-||         move.l (loc_latest), %a0
-||         move.l %a0, (prefix_cur_ptr)                   | save cur_ptr
-|| resume_prefix_match:
-||         moveq.l #0, %d1                         | character offset in d1
-||         move.l prefix_match_struct, %a1         | match info in a1, current entry in a0
-||         | check length of prefix
-||         move.l (%a1), %d3                       | length of prefix in d3
-||         move.l (%a0), %d2                       | length of entry in d2
-||         cmp.b %d2, %d3                          | name not long enough?
-||         blt prefix_get_next_entry
-|| prefix_match_chars:    
-||         addq.l #1, %d1
-||         cmp.b 0(%d1, %a0), 0(%d1, %a1)
-||         bne prefix_get_next_entry
-||         dbeq %d3, resume_prefix_match
-
-|| prefix_found_match:
-||         move.l (%a0), (prefix_cur_result)
-        
-|| prefix_get_next_entry:
-||         move.l (%a0), (prefix_cur_ptr)   | save offset
-||         bra resume_prefix_match
-
-        
+       
 user_variables_start:   
 
         .space 15360, 'U'               | space for 20 user tasks

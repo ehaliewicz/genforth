@@ -8,7 +8,10 @@
 #define WIDTH_TILES 38
 #define HEIGHT_TILES 28
 #define HEIGHT_INPUT_NO_OSK 28
-#define HEIGHT_INPUT_OSK 18
+#define HEIGHT_INPUT_OSK 17
+
+/// first ascii character we give a shit about
+#define CHAR_START 32
 
 void initIO();
 void clearScreen();

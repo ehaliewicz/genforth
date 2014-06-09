@@ -20,6 +20,8 @@ static int displayingOsk = 0;
 static u16 inputFlags;
 static u16 oskFlags;
 
+
+
 void drawOsk();
 void initCursorSprite();
 
@@ -36,6 +38,10 @@ void initIO() {
   printCol = 1;
   printRow = 0;
   VDP_setTextPlan(inputPlan);
+}
+
+void waitForStart() {
+  JOY_waitPressBtn(JOY_1, BUTTON_START);  
 }
 
 void clearScreen() {
@@ -111,14 +117,14 @@ char charDowncase(char c) {
 
 extern u32 **loc_latest;
 static u32 *cur_entry;
-static int prefix_cnt, failed_match, clear_cnt;
+static int prefix_cnt, clear_cnt, continue_match;
 
 
 void resetPrefixSearch() {
   cur_entry = *loc_latest;
-  failed_match = 0;
   prefix_cnt = 0;
   clear_cnt = 0;
+  continue_match = 0;
 }
 
 
@@ -127,12 +133,16 @@ void resetPrefixSearch() {
 u32* prefixMatch(char* word, u32 wordLen) {
   u8 nameLen;
   char* entryWord;
-
+  
+  if(!continue_match) {
+    cur_entry = loc_latest;
+    continue_match = 1;
+  }
   
  check_match:
-  nameLen = *(((u8*)cur_entry)+4);
+  nameLen = (*(((u8*)cur_entry)+4));
   
-  if(nameLen < wordLen) {
+  if((0x1F & nameLen) < wordLen) {
     // continue onto next entry
     goto get_next;
   } else {
@@ -159,7 +169,7 @@ u32* prefixMatch(char* word, u32 wordLen) {
   }
   
  no_match:
-  failed_match = 1;
+  cur_entry = *loc_latest;
   return NULL;
 
 }
@@ -170,7 +180,7 @@ void drawOsk() {
   
   //VDP_setTextPlan(oskPlan);
   
-  u8 ascii_cnt = 33;
+  u8 ascii_cnt = CHAR_START;
   char str[2] = {' ', '\0'};
   for(int y = height_input; y < height_tiles; y+=2) {
     for(int x = 1; x < WIDTH_TILES; x+=2) {
@@ -180,22 +190,57 @@ void drawOsk() {
     }
   }
 
-
-  if(printRow >= HEIGHT_INPUT_OSK) {
+  if(printRow >= height_input) {
     clearScreen();
     printRow = 0;
     printCol = 1;
   }
-  
-  
 }
 
+static u16 cursorFlags = TILE_ATTR_FULL(PAL0,1,0,0,1);
 void clearOsk() {
   VDP_clearPlan(oskPlan, 1);
   height_input = HEIGHT_INPUT_NO_OSK;
-  VDP_resetSprites();
+  VDP_setSprite(0, 0, 0, SPRITE_SIZE(2,2), cursorFlags, 0);
+  VDP_updateSprites();
   VDP_waitVSync();
 }
+
+
+
+// 4x4 is base tile size
+const u32 spriteTiles[4*8] =
+  {
+    
+    0x00800000,
+    0x00880000,
+    
+    0x00888000,
+    0x00888800,  
+    
+    0x00888880,
+    0x00888888,
+    
+    0x00888800,
+    0x00800000
+  };
+
+void initCursorSprite() {
+  // load into position 1? in vram
+  // data, vram offset, num_tiles, use_dma
+  VDP_loadTileData((const u32*)spriteTiles, 1, 4, 0);
+}
+
+void drawOskCursor() {
+  int x = (1+(oskX * 2)) * 8;
+  int y = (HEIGHT_INPUT_OSK + (oskY * 2)) * 8;
+  // update position
+  VDP_setSprite(0, x+4, y+6, SPRITE_SIZE(2,2), cursorFlags, 0);
+  // draw
+  VDP_updateSprites();
+}
+      
+
 
 
 
@@ -230,6 +275,18 @@ void shiftForward(int start) {
   }
 }
 
+  
+void inputLeft() {
+  decPtr();
+  cursorCnt = 20;
+  resetPrefixSearch();
+}
+
+void inputRight() {
+  incPtr();
+  cursorCnt = 20;
+  resetPrefixSearch();
+}
 
 
 void handleOskInput(u16 state, u16 diff) {
@@ -243,7 +300,11 @@ void handleOskInput(u16 state, u16 diff) {
   if(diff & BUTTON_A) { 
     // place selected key in buffer
     // increment cursor pointer
-    tmpBuffer[ptr] = 'A';
+    u8 ascii_char = CHAR_START+(oskY*19)+oskX;
+    
+    tmpBuffer[ptr] = ascii_char;
+    incPtr();
+    
     resetPrefixSearch();
   }
 
@@ -276,7 +337,7 @@ void handleOskInput(u16 state, u16 diff) {
     oskY = (oskY-1) % 5;
     if(oskY < 0) {
       oskY = 4;
-    }
+      }
   }
 
   
@@ -288,14 +349,22 @@ void handleOskInput(u16 state, u16 diff) {
   }
   
   if(diff & BUTTON_LEFT) {
-    oskX = (oskX-1);
-    if(oskX < 0) {
-      oskX = 18;
+    if(state & BUTTON_Z) {
+      inputLeft();
+    } else {
+      oskX = (oskX-1);
+      if(oskX < 0) {
+        oskX = 18;
+      }
     }
   }
 
   if(diff & BUTTON_RIGHT) {
-    oskX = (oskX+1) % 19; 
+    if(state & BUTTON_Z) {
+      inputRight();
+    } else {
+      oskX = (oskX+1) % 19; 
+    }
   }
   
   
@@ -303,42 +372,7 @@ void handleOskInput(u16 state, u16 diff) {
   
 }
 
-
-
-// 4x4 is base tile size
-const u32 spriteTiles[4*8] =
-  {
-    
-    0x00800000,
-    0x00880000,
-    
-    0x00888000,
-    0x00888800,  
-    
-    0x00888880,
-    0x00888888,
-    
-    0x00888800,
-    0x00800000
-  };
-
-void initCursorSprite() {
-  // load into position 1? in vram
-  // data, vram offset, num_tiles, use_dma
-  VDP_loadTileData((const u32*)spriteTiles, 1, 4, 0);
-  
-  
-}
-
-void drawOskCursor() {
-  int x = (1+(oskX * 2)) * 8;
-  int y = (HEIGHT_INPUT_OSK + (oskY * 2)) * 8;
-  // update position
-  VDP_setSprite(0, x+4, y+6, SPRITE_SIZE(1,1), TILE_ATTR_FULL(PAL0,1,0,0,1), 0);
-  // draw
-  VDP_updateSprites();
-}
-      
+ 
 
 
 static int initialized=0;
@@ -364,25 +398,35 @@ void get_line_of_input() {
     buffer[i] = ' ';
   }
   
-  // dummy data
-  /* if(used == 0) { */
+  //dummy data
+    /* if(used == 0) { */
 
-  /* buffer[0] = '3'; */
-  /* buffer[1] = '3'; */
-  /* buffer[2] = ' '; */
-  /* buffer[3] = ' '; */
-  /* buffer[4] = ' '; */
-  /* buffer[5] = ' '; */
-  /* buffer[6] = ' '; */
-  /* buffer[7] = ' '; */
+    /*   buffer[0] = ':'; */
+    /*   buffer[1] = ' '; */
+    /*   buffer[2] = 'P'; */
+    /*   buffer[3] = 'B'; */
+    /*   buffer[4] = 'A'; */
+    /*   buffer[5] = 'S'; */
+    /*   buffer[6] = 'E'; */
+    /*   buffer[7] = ' '; */
+    /*   buffer[8] = 'B'; */
+    /*   buffer[9] = 'A'; */
+    /*   buffer[10] = 'S'; */
+    /*   buffer[11] = 'E'; */
+    /*   buffer[12] = ' '; */
+    /*   buffer[13] = '@'; */
+    /*   buffer[14] = ' '; */
+    /*   buffer[15] = '.'; */
+    /*   buffer[16] = ' '; */
+    /*   buffer[17] = ';'; */
   
   
   
-  /* bufftop = (u32*)(buffer+WIDTH_TILES); */
-  /* curkey  = (u32*)(buffer); */
-  /* used = 1; */
-  /* return; */
-  /* } */
+    /*   bufftop = (u32*)(buffer+WIDTH_TILES); */
+    /*   curkey  = (u32*)(buffer); */
+    /*   used = 1; */
+    /*   return; */
+    /* } */
 
   //char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {
@@ -416,20 +460,12 @@ void get_line_of_input() {
       // skip rest of loop iteration
       goto end_loop_iter;
     }
-    
+ 
     
     if(diff & BUTTON_LEFT) {
-      
-      //read = 1;
-      decPtr();
-      cursorCnt = 20;
-      resetPrefixSearch();
-      
+      inputLeft();      
     } else if (diff & BUTTON_RIGHT) {
-      //read = 1;
-      incPtr();
-      cursorCnt = 20;
-      resetPrefixSearch();
+      inputRight();
     }
 
     else if (diff & BUTTON_UP) {
@@ -495,7 +531,6 @@ void get_line_of_input() {
     }
 
     if(diff & BUTTON_X) {  
-
       int cnt = 0;
       
       if(tmpBuffer[ptr] == ' ') {
@@ -511,6 +546,7 @@ void get_line_of_input() {
         cnt++;
       }
       if(prefix_cnt == 0) {
+        resetPrefixSearch();
         prefix_cnt = cnt;
       }
       u32* res = prefixMatch(tmpBuffer+ptr, prefix_cnt);
