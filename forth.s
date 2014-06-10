@@ -1336,14 +1336,14 @@ interp_parse_error:
         bsr telln
         rts
 
-        DEFWORD "(",1,parenOpen,0, "( -- ) Ignores all input until a ')' is found."
+        DEFWORD "(",1,parenOpen,F_IMMED, "( -- ) Ignores all input until a ')' is found."
 parenLoop:
         bsr word
         POP %d2
         POP %a0  | trash word
         cmp.b #1, %d2
         bne parenLoop
-        cmp.b #')', (%a0)
+        cmp.b #41, (%a0)
         bne parenLoop
         rts
 

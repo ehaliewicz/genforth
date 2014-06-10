@@ -174,40 +174,8 @@ u32* prefixMatch(char* word, u32 wordLen) {
 
 }
 
-int oskX, oskY;
-void drawOsk() {
-  height_input = HEIGHT_INPUT_OSK;
-  
-  //VDP_setTextPlan(oskPlan);
-  
-  u8 ascii_cnt = CHAR_START;
-  char str[2] = {' ', '\0'};
-  for(int y = height_input; y < height_tiles; y+=2) {
-    for(int x = 1; x < WIDTH_TILES; x+=2) {
-      str[0] = ascii_cnt++;
-      VDP_drawTextBG(oskPlan, str, oskFlags, x, y);
-      if(ascii_cnt >= 128) { return; }
-    }
-  }
-
-  if(printRow >= height_input) {
-    clearScreen();
-    printRow = 0;
-    printCol = 1;
-  }
-}
-
-static u16 cursorFlags = TILE_ATTR_FULL(PAL0,1,0,0,1);
-void clearOsk() {
-  VDP_clearPlan(oskPlan, 1);
-  height_input = HEIGHT_INPUT_NO_OSK;
-  VDP_setSprite(0, 0, 0, SPRITE_SIZE(2,2), cursorFlags, 0);
-  VDP_updateSprites();
-  VDP_waitVSync();
-}
-
-
-
+int oskX = 0;
+int oskY = 0;
 // 4x4 is base tile size
 const u32 spriteTiles[4*8] =
   {
@@ -229,8 +197,11 @@ void initCursorSprite() {
   // load into position 1? in vram
   // data, vram offset, num_tiles, use_dma
   VDP_loadTileData((const u32*)spriteTiles, 1, 4, 0);
+  oskX = 0;
+  oskY = 0;
 }
 
+static u16 cursorFlags = TILE_ATTR_FULL(PAL0,1,0,0,1);
 void drawOskCursor() {
   int x = (1+(oskX * 2)) * 8;
   int y = (HEIGHT_INPUT_OSK + (oskY * 2)) * 8;
@@ -240,6 +211,40 @@ void drawOskCursor() {
   VDP_updateSprites();
 }
       
+
+
+
+
+void drawOsk() {
+  height_input = HEIGHT_INPUT_OSK;
+    
+  drawOskCursor();
+  u8 ascii_cnt = CHAR_START;
+  char str[2] = {' ', '\0'};
+  for(int y = height_input; y < height_tiles; y+=2) {
+    for(int x = 1; x < WIDTH_TILES; x+=2) {
+      str[0] = ascii_cnt++;
+      VDP_drawTextBG(oskPlan, str, oskFlags, x, y);
+      if(ascii_cnt >= 128) { return; }
+    }
+  }
+
+  if(printRow >= height_input) {
+    clearScreen();
+    printRow = 0;
+    printCol = 1;
+  }
+}
+
+void clearOsk() {
+  VDP_clearPlan(oskPlan, 1);
+  height_input = HEIGHT_INPUT_NO_OSK;
+  VDP_setSprite(0, -10, -10, SPRITE_SIZE(2,2), cursorFlags, 0);
+  VDP_updateSprites();
+  VDP_waitVSync();
+}
+
+
 
 
 
@@ -275,29 +280,10 @@ void shiftForward(int start) {
   }
 }
 
-  
-void inputLeft() {
-  decPtr();
-  cursorCnt = 20;
-  resetPrefixSearch();
-}
-
-void inputRight() {
-  incPtr();
-  cursorCnt = 20;
-  resetPrefixSearch();
-}
 
 
-void handleOskInput(u16 state, u16 diff) {
-  
-  if(diff & BUTTON_Y) { 
-    clearOsk();
-    displayingOsk = 0;
-    return;
-  }
-  
-  if(diff & BUTTON_A) { 
+void handle_a() {
+  if(displayingOsk == 1) {
     // place selected key in buffer
     // increment cursor pointer
     u8 ascii_char = CHAR_START+(oskY*19)+oskX;
@@ -306,71 +292,181 @@ void handleOskInput(u16 state, u16 diff) {
     incPtr();
     
     resetPrefixSearch();
+  } else {
+    tmpBuffer[ptr] = 'A'; 
+    cursorCnt = 20;     
+    resetPrefixSearch();
   }
+}
 
-  if(diff & BUTTON_B) {
-    // delete character in buffer[ptr-1]
-    // shift rest of characters left
-    shiftBack(ptr-1);
+void handle_b() {
+  // same behavior with or without keyboard
+  // delete character in buffer[ptr-1]
+  // shift rest of characters left
+  shiftBack(ptr-1);
+  
+  char delChar = tmpBuffer[ptr-1];
+  if(delChar == ':') {
+    defMode = 0;
+  } else if (delChar == ';') {
+    defMode = 1;
+  }
+  decPtr();
+  resetPrefixSearch();
+}
+
+void handle_c() {
+  // same behaviour with or without keyboard
+  // shift characters starting at buffer[ptr] right
+  // insert space in buffer[ptr]
+  shiftForward(ptr);
+  tmpBuffer[ptr] = ' ';
+  incPtr();
+  resetPrefixSearch();
+}
+
+void handle_x() {
+  int cnt = 0;
+      
+  if(tmpBuffer[ptr] == ' ') {
+    return; //;continue;
+  }
+      
     
-    char delChar = tmpBuffer[ptr-1];
-    if(delChar == ':') {
-      defMode = 0;
-    } else if (delChar == ';') {
-      defMode = 1;
+  // skip spaces
+  while(1) {
+    if(tmpBuffer[ptr+cnt] == ' ') {
+      break;
     }
-    decPtr();
-    resetPrefixSearch();
+    cnt++;
   }
-  
-  if(diff & BUTTON_C) {
-    // shift characters starting at buffer[ptr] right
-    // insert space in buffer[ptr]
-    shiftForward(ptr);
-    tmpBuffer[ptr] = ' ';
-    incPtr();
+  if(prefix_cnt == 0) {
     resetPrefixSearch();
+    prefix_cnt = cnt;
   }
-  
-  // wrap-around
-  if(diff & BUTTON_UP) {
-    oskY = (oskY-1) % 5;
+  u32* res = prefixMatch(tmpBuffer+ptr, prefix_cnt);
+  if(res) {
+    u8 entryWordLen = 0x1F & *(((u8*)res)+4);
+    char* entryWord = ((u8*)res)+5;
+    if(entryWordLen > clear_cnt) {
+      clear_cnt = entryWordLen;
+    }
+    for(int i = 0; i < clear_cnt; i++) {
+      tmpBuffer[ptr+i] = ' ';
+    }
+    for(int i = 0; i < entryWordLen; i++) {
+      //shiftForward(ptr+i+1);
+      tmpBuffer[ptr+i] = entryWord[i];
+    }
+  }
+}
+
+void modCursorChar(u8 dc) {
+  tmpBuffer[ptr] += dc;
+  cursorCnt = 20;
+  resetPrefixSearch();
+}
+
+void handle_up(u16 state) {
+  if(displayingOsk == 1 && !(state & BUTTON_Z)) {
+    oskY = (oskY-1);
     if(oskY < 0) {
       oskY = 4;
-      }
+    }
+  } else {
+    modCursorChar(1);
   }
+}
 
-  
-  if(diff & BUTTON_DOWN) {
+void handle_down(u16 state) {
+  if(displayingOsk == 1 && !(state & BUTTON_Z)) {
     oskY = (oskY+1);
     if(oskY >= 5) {
       oskY = 0;
     }
+    
+  } else {
+    modCursorChar(-1);
   }
-  
-  if(diff & BUTTON_LEFT) {
-    if(state & BUTTON_Z) {
-      inputLeft();
-    } else {
-      oskX = (oskX-1);
-      if(oskX < 0) {
-        oskX = 18;
-      }
-    }
-  }
-
-  if(diff & BUTTON_RIGHT) {
-    if(state & BUTTON_Z) {
-      inputRight();
-    } else {
-      oskX = (oskX+1) % 19; 
-    }
-  }
-  
-  
-  
-  
 }
+
+  
+void handle_left(u16 state) {
+  if(displayingOsk == 1 && !(state & BUTTON_Z)) {
+    oskX = (oskX-1);
+    if(oskX < 0) {
+      oskX = 18;
+    }
+  } else {
+    decPtr();
+    cursorCnt = 20;
+    resetPrefixSearch();
+  }
+}
+
+
+void handle_right(u16 state) {
+  if(displayingOsk == 1 && !(state & BUTTON_Z)) {
+    oskX = (oskX+1) % 19;
+  } else {
+    incPtr();
+    cursorCnt = 20;
+    resetPrefixSearch();
+  }
+}
+
+/* void handleOskInput(u16 state, u16 diff) { */
+  
+/*   if(diff & BUTTON_Y) { */
+/*     clearOsk(); */
+/*     displayingOsk = 0; */
+/*     return; */
+/*   } */
+  
+/*   if(diff & BUTTON_A) { */
+/*     handle_a(); */
+/*   } */
+
+/*   if(diff & BUTTON_B) { */
+/*     handle_b(); */
+/*   } */
+  
+/*   if(diff & BUTTON_C) { */
+/*     // shift characters starting at buffer[ptr] right */
+/*     // insert space in buffer[ptr] */
+/*     handle_c(); */
+/*   } */
+  
+/*   // wrap-around */
+/*   if(diff & BUTTON_UP) { */
+/*     handle_up(); */
+/*   } */
+
+  
+/*   if(diff & BUTTON_DOWN) { */
+/*     handle_down(); */
+/*   } */
+  
+/*   if(diff & BUTTON_LEFT) { */
+/*     if(state & BUTTON_Z) { */
+/*       inputLeft(); */
+/*     } else { */
+/*       oskX = (oskX-1); */
+/*       if(oskX < 0) { */
+/*         oskX = 18; */
+/*       } */
+/*     } */
+/*   } */
+
+/*   if(diff & BUTTON_RIGHT) { */
+/*     if(state & BUTTON_Z) { */
+/*       inputRight(); */
+/*     } else { */
+/*       oskX = (oskX+1) % 19; */
+/*     } */
+/*   } */
+  
+/* } */
 
  
 
@@ -421,37 +517,23 @@ void get_line_of_input() {
 
     // needs to come first to intercept other keypresses
     if(displayingOsk == 1) {
-      // while z is held down && osk is displayed
-      // select key from keyboard
-      
-      // pass input buffer and cursor pointer, along with gamepad info
-      drawOskCursor(1);
-      handleOskInput(state, diff);
-      drawOskCursor(0);
-      
-      // skip rest of loop iteration
-      goto end_loop_iter;
+      drawOsk();
     }
  
     
     if(diff & BUTTON_LEFT) {
-      inputLeft();      
+      handle_left(state);      
     } else if (diff & BUTTON_RIGHT) {
-      inputRight();
+      handle_right(state);
     }
 
     else if (diff & BUTTON_UP) {
-      //read = 1;
-      tmpBuffer[ptr]++;
-      cursorCnt = 20;    
-      resetPrefixSearch();
+      handle_up(state);
     }
 
     else if (diff & BUTTON_DOWN) {
       //read = 1;
-      tmpBuffer[ptr]--;
-      cursorCnt = 20;
-      resetPrefixSearch();
+      handle_down(state);
     }
     
     if (diff & BUTTON_MODE) {
@@ -474,68 +556,19 @@ void get_line_of_input() {
     }
     
     if(diff & BUTTON_A) {
-      //read = 1;
-      tmpBuffer[ptr] = 'A'; 
-      cursorCnt = 20;     
-      resetPrefixSearch();
+      handle_a();
     }
     
     if(diff & BUTTON_B) {
-      //read = 1;
-      shiftBack(ptr-1);
-
-      char delChar = tmpBuffer[ptr-1];
-      if(delChar == ':') {
-        defMode = 0;
-      } else if (delChar == ';') {
-        defMode = 1;
-      }
-      decPtr();
-      resetPrefixSearch();
+      handle_b();
     }
 
     if(diff & BUTTON_C) {
-      //read = 1;
-      shiftForward(ptr);
-      tmpBuffer[ptr] = ' ';
-      incPtr();
-      resetPrefixSearch();
+      handle_c();
     }
 
     if(diff & BUTTON_X) {  
-      int cnt = 0;
-      
-      if(tmpBuffer[ptr] == ' ') {
-        continue;
-      }
-      
-    
-      // skip spaces
-      while(1) {
-        if(tmpBuffer[ptr+cnt] == ' ') {
-          break;
-        }
-        cnt++;
-      }
-      if(prefix_cnt == 0) {
-        resetPrefixSearch();
-        prefix_cnt = cnt;
-      }
-      u32* res = prefixMatch(tmpBuffer+ptr, prefix_cnt);
-      if(res) {
-        u8 entryWordLen = 0x1F & *(((u8*)res)+4);
-        char* entryWord = ((u8*)res)+5;
-        if(entryWordLen > clear_cnt) {
-          clear_cnt = entryWordLen;
-        }
-        for(int i = 0; i < clear_cnt; i++) {
-          tmpBuffer[ptr+i] = ' ';
-        }
-        for(int i = 0; i < entryWordLen; i++) {
-          //shiftForward(ptr+i+1);
-          tmpBuffer[ptr+i] = entryWord[i];
-        }
-      }
+      handle_x();
     }
 
     if(diff & BUTTON_Y) {
@@ -543,7 +576,6 @@ void get_line_of_input() {
 
       // toggle on-screen keyboard
       if(displayingOsk == 1) {
-        // control should never reach this code
         clearOsk();
         displayingOsk = 0;
       } else {
