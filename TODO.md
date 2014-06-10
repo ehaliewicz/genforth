@@ -5,8 +5,6 @@ CHAR (gets character code of a character following this word in the iinput strea
 
 LITSTRING   PUSHES a string address on te stack (usually the string is compiled inline in the instruction stream) 
 
-<JSR> compiles jump
-
 
 colon words
 -----------
