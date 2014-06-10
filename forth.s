@@ -1,7 +1,6 @@
         
         | subroutine threaded forth for the megadrive
 
-        | a5 points to the user pointer (for multiple tasks, very useful in games)
         | a6 points to the second to top value on the parameter stack and grows downward
         | d0 contains the top value on the parameter stack
         | a7 points to the top value on the return stack (native stack) and grows downward
