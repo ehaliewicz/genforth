@@ -115,13 +115,12 @@ char charDowncase(char c) {
 }
 
 
-extern u32 **loc_latest;
+extern u32 *loc_latest;
 static u32 *cur_entry;
 static int prefix_cnt, clear_cnt, continue_match;
 
 
 void resetPrefixSearch() {
-  cur_entry = *loc_latest;
   prefix_cnt = 0;
   clear_cnt = 0;
   continue_match = 0;
@@ -140,9 +139,9 @@ u32* prefixMatch(char* word, u32 wordLen) {
   }
   
  check_match:
-  nameLen = (*(((u8*)cur_entry)+4));
+  nameLen = 0x1F & (*(((u8*)cur_entry)+4));
   
-  if((0x1F & nameLen) < wordLen) {
+  if(nameLen < wordLen) {
     // continue onto next entry
     goto get_next;
   } else {
@@ -169,6 +168,7 @@ u32* prefixMatch(char* word, u32 wordLen) {
   }
   
  no_match:
+  continue_match = 1;
   cur_entry = *loc_latest;
   return NULL;
 
@@ -375,8 +375,8 @@ void handleOskInput(u16 state, u16 diff) {
  
 
 
-static int initialized=0;
-static int used = 0;
+static int initialized = 0;
+
 
 
 // when on-screen keyboard is running
@@ -397,36 +397,7 @@ void get_line_of_input() {
   for(int i = 0; i < WIDTH_TILES-1; i++) {
     buffer[i] = ' ';
   }
-  
-  //dummy data
-    /* if(used == 0) { */
-
-    /*   buffer[0] = ':'; */
-    /*   buffer[1] = ' '; */
-    /*   buffer[2] = 'P'; */
-    /*   buffer[3] = 'B'; */
-    /*   buffer[4] = 'A'; */
-    /*   buffer[5] = 'S'; */
-    /*   buffer[6] = 'E'; */
-    /*   buffer[7] = ' '; */
-    /*   buffer[8] = 'B'; */
-    /*   buffer[9] = 'A'; */
-    /*   buffer[10] = 'S'; */
-    /*   buffer[11] = 'E'; */
-    /*   buffer[12] = ' '; */
-    /*   buffer[13] = '@'; */
-    /*   buffer[14] = ' '; */
-    /*   buffer[15] = '.'; */
-    /*   buffer[16] = ' '; */
-    /*   buffer[17] = ';'; */
-  
-  
-  
-    /*   bufftop = (u32*)(buffer+WIDTH_TILES); */
-    /*   curkey  = (u32*)(buffer); */
-    /*   used = 1; */
-    /*   return; */
-    /* } */
+ 
 
   //char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {
@@ -551,7 +522,7 @@ void get_line_of_input() {
       }
       u32* res = prefixMatch(tmpBuffer+ptr, prefix_cnt);
       if(res) {
-        u8 entryWordLen = *(((u8*)res)+4);
+        u8 entryWordLen = 0x1F & *(((u8*)res)+4);
         char* entryWord = ((u8*)res)+5;
         if(entryWordLen > clear_cnt) {
           clear_cnt = entryWordLen;

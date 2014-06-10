@@ -57,47 +57,37 @@ halt_loop:
         .endm
                 
 
-        .macro DEFWORD name, nameLen, label, flags
-        .set LAST_WORD_2, .
+        .macro DEFWORD name, nameLen, label, flags, doc
+        .set DOC_START, .
+        .ascii "\doc"
+        .set DOC_LEN, .-DOC_START
+        .balign 2
+        dc.l DOC_START
+        dc.w DOC_LEN
         dc.l LAST_WORD
-        .set LAST_WORD, LAST_WORD_2
+        .set LAST_WORD, .-4
         .byte \nameLen+\flags
         .ascii "\name"
         .balign 2
 \label:
         .endm
 
-        .macro DEFSYSVAR name, nameLen, label, flags, val
+        .macro DEFSYSVAR name, nameLen, label, flags, val, doc
 loc_\label:
         dc.l \val
-        DEFWORD \name, \nameLen, \label, \flags
+        DEFWORD \name, \nameLen, \label, \flags, "\doc"
         PUSH #loc_\label
         rts
-
-        | DEFWORD \name@, \nameLen+1, fetch_\label, \flags
-        | PUSH (loc_\label)
-        | rts
-
-        | DEFWORD \name!, \nameLen+1, store_\label, \flags
-        | POP (loc_\label)
-        | rts
-        .endm
+       .endm
         
 
-        .macro DEFUSERVAR name, nameLen, label, flags, val
+        .macro DEFUSERVAR name, nameLen, label, flags, val, doc
         
-        DEFWORD \name, \nameLen, \label, \flags
+        DEFWORD \name, \nameLen, \label, \flags, "\doc"
         add.l %a5, %a4                  | offset by user task pointer
         PUSH %a4                        | push result onto stack
         rts
-
-        | DEFWORD \name@, \nameLen+1, fetch_\label, \flags
-        | PUSH USER_VAR_OFFSET(%a5)
-        | rts
-        | DEFWORD \name!, \nameLen+1, store_\label, \flags
-        | POP USER_VAR_OFFSET(%a5)
-        | rts
-
+        
         | increment offset pointer
         .set USER_VAR_OFFSET, (USER_VAR_OFFSET+4)
         .set USER_VAR_COUNT, USER_VAR_COUNT+1
@@ -105,8 +95,8 @@ loc_\label:
 
 
         
-        .macro DEFCONST name, nameLen, label, flags, val
-        DEFWORD \name, \nameLen, \label, \flags
+        .macro DEFCONST name, nameLen, label, flags, val, doc
+        DEFWORD \name, \nameLen, \label, \flags, "\doc"
         PUSH \val
         rts
         .endm
@@ -130,7 +120,7 @@ loc_\label:
 
         | ENTRY POINT, start of ROM
 main:
-        | well, we don't really need ROM yet so jump to RAM ;)
+        | well, we don't really need ROM so jump to RAM
         jmp ram_entry_point
 
 
@@ -139,25 +129,25 @@ main:
         .data
 
         | place all system vars at the beginning
-        DEFSYSVAR "CP",2,cp,0,0
-        DEFSYSVAR "LATEST",6,latest,0,0
-        DEFSYSVAR "UOFF",4,user_var_offset,0,0
-        DEFSYSVAR "UCNT",4,user_var_count,0,0
+        DEFSYSVAR "CP",2,cp,0,0,"Location of the current dictionary pointer."
+        DEFSYSVAR "LATEST",6,latest,0,0,"Location of the last compiled word."
+        DEFSYSVAR "UOFF",4,user_var_offset,0,0,"Offset to user data."
+        DEFSYSVAR "UCNT",4,user_var_count,0,0,"# of user variables defined."
         
-        DEFSYSVAR "STATE",5,state,0,0
-        DEFSYSVAR "BASE",4,base,0,0xA
+        DEFSYSVAR "STATE",5,state,0,0,"State of the interpreter (1==compile,0==interpreter)."
+        DEFSYSVAR "BASE",4,base,0,0xA,"Number base for parser/output words."   
         | 1 == case-sensitive, 0 == case-insensitive
-        DEFSYSVAR "CASE",4,case,0
+        | DEFSYSVAR "CASE",4,case,0,"Case sensitive? (1 == yes,0==no)"
         
-        DEFCONST "S0",2,szero, 0, #ps_end
-        DEFCONST "SS0",3,sszero, 0, #shadow_stack | shadow stack
+        DEFCONST "S0",2,szero, 0, #ps_end, "Location of the top of the stack (grows downward)."
+        DEFCONST "SS0",3,sszero, 0, #shadow_stack, "Location of the top of the shadow stack (grows downward)."
         
-        | hundredths of versions ;)
-        DEFCONST "VERSION", 7, version, 0, #0x00000001
-        DEFCONST "R0", 2, rzero, 0, #RSTACK_END
-        DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED
-        DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN
-        DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK
+        | hundredths of versions
+        DEFCONST "VERSION", 7, version, 0, #0x00000001,"Current version."
+        DEFCONST "R0", 2, rzero, 0, #RSTACK_END,"Top of return stack. Uses the native stack so grows downward."
+        DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED,"Flag for marking words as immediate."
+        DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN,"Flag for marking words as hidden."
+        DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK,"Masks off the length of a word from the flags+length field."
 
         
 welcome_message:
@@ -253,24 +243,22 @@ stackUnderflow:
         jmp stackUnderflowError
         
         
-        DEFWORD "DROP",4,drop,0
-        | ( a -- )
+        DEFWORD "DROP",4,drop,0, "( a -- )"
         move.l (%a6)+, %d0
         rts
 
-        DEFWORD "DUP",3,dup,0
-        | ( a -- a a )
+        DEFWORD "DUP",3,dup,0,"( a -- a a )"
         move.l %d0, -(%a6)
         rts
 
-        DEFWORD "OVER",4,over,0
+        DEFWORD "OVER",4,over,0,"( a b -- a b a )"
         | ( a b -- a b a )
         move.l (%a6), %d1
         move.l %d0, -(%a6)
         move.l %d1, %d0
         rts
 
-        DEFWORD "SWAP",4,swap,0
+        DEFWORD "SWAP",4,swap,0,"( a b -- b a )"
         | ( a b -- b a )
         move.l %d0, %d1
         move.l (%a6), %d0
@@ -278,7 +266,7 @@ stackUnderflow:
         rts
 
         
-        DEFWORD "ROT",3,rot,0  
+        DEFWORD "ROT",3,rot,0, "( a b c -- b c a )"  
         | ( a b c -- b c a )
         | swap +4 and +0
         move.l (%a6)+, %d1
@@ -289,7 +277,7 @@ stackUnderflow:
         move.l %d2, %d0
         rts
      	  
-        DEFWORD "-ROT",4,nrot,0
+        DEFWORD "-ROT",4,nrot,0, "( a b c -- c a b )"
         | ( a b c -- c a b )
         move.l (%a6)+, %d1
         move.l (%a6)+, %d2
@@ -298,20 +286,20 @@ stackUnderflow:
         move.l %d1, %d0
         rts
         
-        DEFWORD "2DUP",4,tdup,0
+        DEFWORD "2DUP",4,tdup,0, "( a b -- a b a b )"
         | ( a b -- a b a b )
         move.l (%a6), %d1
         move.l %d0, -(%a6)
         move.l %d1, -(%a6)
         rts
     
-        DEFWORD "2DROP",5,tdrop,0
+        DEFWORD "2DROP",5,tdrop,0, "( a b c d -- a b )"
         | ( a b c d -- a b )
         addq.l #4, %a6
         POP %d0
         rts
         
-        DEFWORD "2SWAP",5,tswap,0
+        DEFWORD "2SWAP",5,tswap,0, "( a b c d -- c d a b )"
         | ( 1 2 3 4 -- 3 4 1 2 )
         move.l %d0, %d3
         move.l (%a6)+, %d2
@@ -320,7 +308,7 @@ stackUnderflow:
         movem.l %d1/%d2/%d3, -(%a6)
         rts
         
-        DEFWORD "?DUP",4,qdup,0 
+        DEFWORD "?DUP",4,qdup,0, "( a == 0 -- a a ), ( a != 0 -- )"
         | ( 0 -- )
         | or 
         | ( nonzero -- nonzero nonzero )
@@ -330,14 +318,14 @@ stackUnderflow:
 qdEnd:
         rts
         
-        DEFWORD ">R",2,rto,0
+        DEFWORD ">R",2,rto,0, "( a -- ) r: ( -- a )"
         | p:( val -- ) r:(  --  val)
         move.l (%a7), %a0
         | pop top of stack into rstack slot
         pop (%a7)
         jmp (%a0)
         
-        DEFWORD "R>",2,rfrom,0
+        DEFWORD "R>",2,rfrom,0, "( -- a ) r: ( a -- )"
         | p:(  -- val ) r:( val -- )
         move.l %d0, -(%a6)
         move.l (%a7)+, %a0
@@ -345,32 +333,32 @@ qdEnd:
         jmp (%a0)
         
         
-        DEFWORD "1+",2,inc,0
+        DEFWORD "1+",2,inc,0, "( a -- a+1 )"
         | ( val -- val+1 )
         addq.l #1, %d0
         rts
         
-        DEFWORD "1-",2,dec,0
+        DEFWORD "1-",2,dec,0, "( a -- a-1 )"
         | ( val -- val-1 )
         subq.l #1, %d0
         rts
         
-        DEFWORD "4+",2,finc,0
+        DEFWORD "4+",2,finc,0, "( a -- a+4 )"
         | ( val -- val+4 )      
         addq.l #4, %d0
         rts
         
-        DEFWORD "4-",2,fdec,0
+        DEFWORD "4-",2,fdec,0, "( a -- a-4 )"
         | ( val -- val-4 )      
         subq.l #4, %d0
         rts
         
-        DEFWORD "+",1,add,0
+        DEFWORD "+",1,add,0, "( a b -- a+b )"
         | ( x y -- x+y )              
         add.l (%a6)+, %d0
         rts
         
-        DEFWORD "-",1,sub,0
+        DEFWORD "-",1,sub,0, "( a b -- a-b )"
         | ( x y -- x-y )                
         sub.l (%a6)+, %d0
         neg.l %d0
@@ -380,14 +368,14 @@ qdEnd:
         | only really handle bytes i think....
         | should add full word multiplication and division
         
-        DEFWORD "*",1,mul,0
+        DEFWORD "*",1,mul,0, "( a b -- a*b )"
         | ( x y -- x*y )
         move.l (%a6)+, %d1
         muls.w %d1, %d0
         
         rts
         
-        DEFWORD "/MOD",4,divmod,0
+        DEFWORD "/MOD",4,divmod,0, "( a b -- a%b a/b )"
         | ( x y -- x%y x/y )
         divs (%a6),%d0
         move.l %d0, %d1
@@ -396,13 +384,13 @@ qdEnd:
         move.w %d1, (%a6)
         rts
         
-        DEFWORD "/",1,div,0
+        DEFWORD "/",1,div,0, "( a b -- a/b )"
         | ( x y -- x/y )
         divs (%a6)+,%d0
         andi.l #0x0000FFFF, %d0
         rts
     
-        DEFWORD "MOD",3,mod,0
+        DEFWORD "MOD",3,mod,0, "( a b -- a%b )"
         | ( x y -- x%y )
         divs (%a6)+,%d0
         rol.l #8, %d0
@@ -420,7 +408,7 @@ push_false:
         
         
         
-        DEFWORD "=",1,eq,0
+        DEFWORD "=",1,eq,0, "( a b -- a==b?1:0 )"
         | ( x y == 1 ) when x == y
         | ( x y == 0 ) when x != y
         
@@ -431,14 +419,14 @@ push_false:
         bra push_false
         
         
-        DEFWORD "!=",2,neq,0
+        DEFWORD "!=",2,neq,0, "( a b -- a!=b?1:0 )"
         POP %d1
         POP %d2
         cmp.l %d1,%d2
         beq push_false
         bra push_true
         
-        DEFWORD "0=",2,zeq,0
+        DEFWORD "0=",2,zeq,0, "( a -- a==0?1:0 )"
         POP %d1
 
         | status flags are set on the moved data, not the address
@@ -448,61 +436,61 @@ push_false:
         beq push_true
         bra push_false
 
-        DEFWORD "0<",2,zlt,0
+        DEFWORD "0<",2,zlt,0, "( a -- a>0?1:0 )"
         POP %d1
         blt push_true
         bra push_false
 
-        DEFWORD "0<=",3,zle,0
+        DEFWORD "0<=",3,zle,0, "( a -- a>=0?1:0 )"
         POP %d1
         ble push_true
         bra push_false
         
-        DEFWORD "0>",2,zgt,0
+        DEFWORD "0>",2,zgt,0, "( a -- a<0?1:0 )"
         POP %d1
         bgt push_true
         bra push_false
         
-        DEFWORD "0>=",2,zge,0
+        DEFWORD "0>=",2,zge,0, "( a -- a<=0?1:0 )"
         POP %d1
         bge push_true
         bra push_false
         
         
-        DEFWORD "0!=",3,zneq,0
+        DEFWORD "0!=",3,zneq,0, "( a -- a!=0?1:0 )"
         POP %d1
         bne push_true
         bra push_false
         
-        DEFWORD "<",1,lt,0
+        DEFWORD "<",1,lt,0, "( a b -- a<b?1:0 )"
         POP %d2
         POP %d1
         cmp.l %d1, %d2
         blt push_true
         bra push_false
             
-        DEFWORD ">",1,gt,0
+        DEFWORD ">",1,gt,0, "( a b -- a>b?1:0 )"
         POP %d2
         POP %d1
         cmp %d1, %d2
         bgt push_true
         bra push_false
         
-        DEFWORD "<=",2,le,0
+        DEFWORD "<=",2,le,0, "( a b -- a<=b?1:0 )"
         POP %d2
         POP %d1
         cmp %d1, %d2
         ble push_true
         bra push_false
     
-        DEFWORD ">=",2,ge,0
+        DEFWORD ">=",2,ge,0, "( a b -- a>=b?1:0 )"
         POP %d2
         POP %d1
         cmp %d1, %d2
         bge push_true
         bra push_false
     
-        DEFWORD "BYE",3,bye,0
+        DEFWORD "BYE",3,bye,0, "Exits interpreter."
         PUSH #'E'
         PUSH #'Y'
         PUSH #'B'
@@ -511,88 +499,76 @@ push_false:
         bsr emit
 bye_loop:        
         bra bye_loop
+
+        DEFWORD "RESTART",7,restart,0, "Restarts system."
+        PUSH #SYS_reset
+        bra ccall1
         
         
-        DEFWORD "!",1,store,0
-        | ( val addr -- )
-        | stores the given value at the given address
-        | works with 32-bit values
+        DEFWORD "!",1,store,0, "( a b -- ) Stores a at the address given by b."
         move.l %d0, %a0
         move.l (%a6)+, (%a0)
         move.l (%a6)+, %d0
         rts
 
-        DEFWORD "!+",2,incMem,0
-        | ( addr -- )
-        | increments the value at the given address
-        move.l %d0, %a0
+        DEFWORD "!+",2,incMem,0, "( b -- ) Increments the longword value at b."
+        POP %a0
         addq.l #1, (%a0)
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "!-",2,decMem,0
-        | ( addr -- )
-        | decrements the value at the address
+        DEFWORD "!-",2,decMem,0, "( b -- ) Decrements the longword value at b."
         move.l %d0, %a0
         subq.l #1, (%a0)
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "@",1,fetch,0
-        | ( addr -- val )
-        | fetchs a 32bit value from the given address
+        DEFWORD "@",1,fetch,0, "( a -- b ) Fetches the longword value b at a."
         move.l %d0, %a0
         move.l (%a0), %d0
         rts
         
-        DEFWORD "@+",2,fetchInc,0
-        | ( addr -- val addr+4 )
-        | fetchs 32-bit values from successive addresses
+        DEFWORD "@+",2,fetchInc,0, "( a -- b a+4 ) Fetches longword value b from a, returning the incremented address."
         move.l %d0, %a0
         move.l (%a0), %d1
         move.l %d1, -(%a6)
         addq.l #4, %d0
         rts
         
-        DEFWORD "@-",2,fetchDec,0
-        | ( addr -- val addr-4 )
-        | fetchs 32-bit values from decreasing addresses
+        DEFWORD "@-",2,fetchDec,0, "( a -- b a-4 ) Fetches longword value b from a, returning the decremented address."
         move.l %d0, %a0
         move.l (%a0), %d1
         move.l %d1, -(%a6)
         subq.l #4, %d0
         rts
         
-        DEFWORD "W!",2,wstore,0
-        | ( val addr -- )       
-        | same as ! but only writes word values
+        DEFWORD "W!",2,wstore,0, "( a b -- ) Stores first lower word of a at address b."
         move.l %d0, %a0
         move.l (%a6)+, %d1
         move.w %d1, (%a0)
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "W@",2,wfetch,0
+        DEFWORD "W@",2,wfetch,0, "( a -- b ) Fetches word b at a."
         move.l %d0, %a0
         move.w (%a0), %d0
         andi.w #0xFFFF, %d0
         rts
         
-        DEFWORD "C!",2,cstore,0
+        DEFWORD "C!",2,cstore,0, "( a b -- ) Stores low byte of a at address b."
         move.l %d0, %a0
         move.l (%a6)+, %d1
         move.b %d1, (%a0)    | store just a byte
         move.l (%a6)+, %d0
         rts
         
-        DEFWORD "C@",2,cfetch,0
+        DEFWORD "C@",2,cfetch,0, "( a -- b ) Fetches byte b from address a."
         move.l %d0, %a0
         move.b (%a0), %d0
         andi.l #0x000000FF, %d0   | just keep the byte fetch
         rts
         
-        DEFWORD "C@C!",4,ccopy,0
-        | ( srcAddr destAddr )
+        DEFWORD "C@C!",4,ccopy,0, "( src dest -- src dest ) Copies a byte from src to dest." 
         move.l %d0, %a1       | get dest ptr
         move.l (%a6), %a0     | get src ptr
         move.b (%a0), (%a1)   | copy byte
@@ -600,9 +576,9 @@ bye_loop:
         addq.l #1, (%a6)      | increment src ptr
         rts
         
-        DEFWORD "CMOVE",5,cmove,0
-                                | ( srcAddr destAddr numBytes )
-                                | move longwords all at once ;)
+        DEFWORD "CMOVE",5,cmove,0, "( src dest num -- ) Copies num bytes from src to dest."
+                                | unrolled loop
+                                | move longwords all at once 
         pop %d1                 | numBytes in %d1
         pop %a1                 | dest in %a1
         pop %a0                 | src in %a0
@@ -619,7 +595,7 @@ bye_loop:
 cMoveByte:
         move.b (%a0)+, (%a1)+
         dblt %d1, cMoveByte     | count down the remainder, max 3 bytes copied individually  
-cMoveLong:                      | copy four words at a time ;)
+cMoveLong:                      | copy four words at a time 
         tst.l %d2
         beq cMoveEnd
 cMoveLongLoop:
@@ -629,9 +605,11 @@ cMoveEnd:
         rts        
     
    
-        DEFWORD ".",1,dot,0     | prints the top element of the stack in decimal
-        moveq #0, %d1           | %d1 is counter  ( rest integer )
-        POP %d2                 | ( rest of stack )
+        DEFWORD ".",1,dot,0, "( a -- ) Prints the top object on the stack. (decimal only)"
+        moveq #0, %d1
+        | %d1 is counter  ( rest integer )
+        POP %d2
+        | ( rest of stack )
 dotLoop:
         move.b %d2, %d3
         andi.l #0xFFFF, %d3      | get word?
@@ -656,7 +634,7 @@ dotPrintLoop:
         PUSH #0x20
         bra emit
     
-        DEFWORD "DEPTH",5,depth,0
+        DEFWORD "DEPTH",5,depth,0, "( -- depth ) Returns current depth of stack."
         | ( -- depth )
         move.l %a6, %d1
         move.l #ps_end, %d2
@@ -665,7 +643,7 @@ dotPrintLoop:
         PUSH %d2
         rts
 
-        DEFWORD "RDEPTH",6,rdepth,0
+        DEFWORD "RDEPTH",6,rdepth,0, "( -- depth ) Returns current depth of return stack"
         move.l %a7, %d1
         move.l RSTACK_END, %d2
         sub.l %d1, %d2
@@ -673,77 +651,70 @@ dotPrintLoop:
         PUSH %d2
         rts
         
-        
-        DEFWORD "GOTO",4,goto,0
+
+        DEFWORD "GOTO",4,goto,0, "( a -- ) Transfer control to address a."
         move.l %d0, %a0
         move.l (%a6)+, %d0
-        addq #4, %a7
         jmp (%a0)
         
-
-        
-
-        
-        
     
-    
-        DEFWORD "AND",3,and,0
+        DEFWORD "AND",3,and,0, "( a b -- a & b)"
         and.l (%a6)+, %d0
         rts
         
-        DEFWORD "OR",2,or,0
+        DEFWORD "OR",2,or,0, "( a b -- a | b)"
         or.l (%a6)+, %d0
         rts
         
-        DEFWORD "XOR",3,xor,0
+        DEFWORD "XOR",3,xor,0, "( a b -- a xor b)"
         move.l (%a6)+, %d1
         eor.l %d1, %d0
         rts
 
-        DEFWORD "NEGATE", 6, negate,0
+        DEFWORD "NEGATE", 6, negate,0, "( a -- -a )"
         negx.l %d0
         rts
         
-        DEFWORD "NOT", 3, not, 0
+        DEFWORD "NOT", 3, not, 0, "( a -- ~a )"
         not.l %d0
         rts
 
-        DEFWORD "LIT", 3, lit, 0
-        move.l (%a7), %a0
-        push (%a0)
-        addq.l #4, (%a7)
-        rts
+        | DEFWORD "LIT", 3, lit, 0
+        | move.l (%a7), %a0
+        | push (%a0)
+        | addq.l #4, (%a7)
+        | rts
 
         | won't work inlined!
-        DEFWORD "RSP@",4,rspfetch,0
+        DEFWORD "RSP@",4,rspfetch,0, "( -- a ) Fetches return stack pointer a."
         |  r ( something return-addr )
         PUSH %sp
         addq #4, %d0
         rts
 
         | won't work inlined!
-        DEFWORD "RSP!",4,rspstore,0
+        DEFWORD "RSP!",4,rspstore,0, "( a -- ) Sets return stack pointer to a."
         move.l (%a7), %a0
         POP %a7
         jmp (%a0)
 
         | won't work inlined!
-        DEFWORD "RDROP",5,rdrop,0
+        DEFWORD "RDROP",5,rdrop,0, "r: ( a -- ) Drops the top object off the return stack."
         move.l (%a7)+, (%a7)
         rts
 
 
-        DEFWORD "DSP@",4,dspfetch,0
+        DEFWORD "DSP@",4,dspfetch,0, "( -- a ) Fetches stack pointer a."
         move.l %a6, %d1
         PUSH %d1
         rts
 
-        DEFWORD "DSP!",4,dspstore,0
+        DEFWORD "DSP!",4,dspstore,0, "( a -- ) Sets stack pointer to a."
         move.l %d0, %a6
         move.l (%a6)+, %d0
-        rts
+        rts     
 
-        DEFWORD "KEY",3,key,0
+        DEFWORD "KEY",3,key,0, "( -- key ) Reads a character from input."
 
 _key:
         | is buffer empty?
@@ -773,7 +744,7 @@ get_new_input:
         bra _key
 
 
-        DEFWORD "CCALL0",6,ccall0,0
+        DEFWORD "CCALL0",6,ccall0,0, "( a -- ) Calls a c-function at addr a."
         POP %a0 | address
         SAVE_REGS
         jsr (%a0)
@@ -781,7 +752,7 @@ get_new_input:
         rts
         
         
-        DEFWORD "CCALL1",6,ccall1,0
+        DEFWORD "CCALL1",6,ccall1,0, "( a b -- ) Calls a c-function at addr b with operand a."
         | ( p1 addr -- )
         POP %a0 | get address
         POP %d1 | get param
@@ -792,7 +763,7 @@ get_new_input:
         RESTORE_REGS
         rts
 
-        DEFWORD "CCALL2",6,ccall2,0
+        DEFWORD "CCALL2",6,ccall2,0, "( a b c -- ) Calls a c-function at addr c with operands a and b."
         | ( p1 p2 addr -- )
         POP %a0
         POP %d2
@@ -805,7 +776,7 @@ get_new_input:
         RESTORE_REGS
         rts
         
-        DEFWORD "CCALL3",6,ccall3,0
+        DEFWORD "CCALL3",6,ccall3,0, "( a b c d ) Calls a c-function at addr d with operands a, b, and c."
         | ( p1 p2 p3 addr -- )
         POP %a0
         POP %d3
@@ -820,18 +791,16 @@ get_new_input:
         RESTORE_REGS
         rts
         
-        DEFWORD "EMIT",4,emit,0
-        | ( key )
-        | ccall1 ( param addr -- )
+        DEFWORD "EMIT",4,emit,0, "( a -- ) Prints a as a character."
         PUSH #printChar
         bra ccall1
 
-        DEFWORD "CR",2,cr,0
+        DEFWORD "CR",2,cr,0, "( -- ) Prints a newline."
         PUSH #'\n'
         bra emit
         
         
-        DEFWORD "WORD",4,word,0
+        DEFWORD "WORD",4,word,0, "( -- wordAddr wordLen ) Reads a word from input."
         moveq.l #0, %d1                 | length in d1
         bra get_first_char
 after_get_word:
@@ -869,25 +838,17 @@ store_chars:
         bra after_get_word
         
 
-
-
-        
-        
-        DEFWORD "TELL",4,tell,0
+        DEFWORD "TELL",4,tell,0, "( a b -- ) Prints string at a with length b."
         | just print a whole string
         | ( strAddr strLen -- )
         push #printStrn
         bra ccall2
 
-        DEFWORD "TELLN",5,telln,0
+        DEFWORD "TELLN",5,telln,0, "( a b -- ) Prints string at a with length b. Starts with a freshline is string is too long."
         push #printStrNewline
         bra ccall2
         
-        DEFWORD "NUMBER",6,number,0
-        | ( strAddr strLen --  number #unparsedChars )
-        | parses a string into a number
-        | returns 0 if error detected
-       
+        DEFWORD "NUMBER",6,number,0, "( strAddr strLen -- number #unparsedChars ) Parses a string, returning a number and the number of unparsed characters (only nonzero in case of error)."
         bra _number
 after_get_number:       
         PUSH %d3 | parsed number
@@ -949,7 +910,7 @@ number_negate:
 number_end:     
         bra after_get_number
 
-        DEFWORD "IS-IMMEDIATE",12,qimmediate,0
+        DEFWORD "IS-IMMEDIATE",12,qimmediate,0, "( wordAddr -- isImmediate ) Returns 1 if given word is an immediate word, 0 otherwise."
         | ( dictEntryAddr -- t/f )
         addq #4, %d0
         move.l %d0, %a0 
@@ -957,22 +918,23 @@ number_end:
         andi.l #F_IMMED, %d0
         rts
 
-        DEFWORD "MARK",4,mark,0
+        DEFWORD "MARK",4,mark,0, "( -- ) Places a mark on the shadow stack."
         move.l #1, (SHADOW_STACK_OFFSET, %a6)             | mark this location in the shadow stack
         rts
 
-        DEFWORD "UNMARK",6,unmark,0
+        DEFWORD "UNMARK",6,unmark,0, "( -- ) Removes a mark from the shadow stack."
         move.l #0, (SHADOW_STACK_OFFSET, %a6)
         rts
         
 
-        DEFWORD "MARKED?",7,markedp,0
+        DEFWORD "MARKED?",7,markedp,0,"( -- ) Is the current location on the shadow stack marked?"
+        move.l (SHADOW_STACK_OFFSET, %a6), %d1            | move shadow stack value to stack (shadow stack should only contain 0s and 1s
         move.l %d0, -(%a6)
-        move.l (SHADOW_STACK_OFFSET, %a6), %d0            | move shadow stack value to stack (shadow stack should only contain 0s and 1s
+        move.l %d1, %d0
         rts
         
 
-        DEFWORD "CLEAR-TO-MARK",13,clearToMark,0
+        DEFWORD "CLEAR-TO-MARK",13,clearToMark,0, "( -- ) Clear stack until we reach a marked slot."
         move.l %a6, %a0
         add.l #SHADOW_STACK_OFFSET, %a0
 ctmLoop:        
@@ -984,7 +946,7 @@ ctmDone:
         rts
 
         
-        DEFWORD "COUNT-TO-MARK",13,countToMark,0
+        DEFWORD "COUNT-TO-MARK",13,countToMark,0, "( -- #objects ) Count number of items on stack above the last mark."
         move.l #0, %d2
         move.l %a6, %a0
         add.l #SHADOW_STACK_OFFSET, %a0
@@ -998,7 +960,7 @@ cntDone:
         rts
         
         
-        DEFWORD "FIND",4,find,0
+        DEFWORD "FIND",4,find,0, "( strAddr strLen -- wordAddr ) Finds address of word corresponding to string. Returns 0 if no word exists."
         POP %d1                 | length of string in d1
         POP %a0                 | address of string in a0
         bra _find_start
@@ -1043,14 +1005,40 @@ get_next_entry:
         move.l (%a1), %a1
         bra _find
         
-entry_not_found: 
+entry_not_found:
         move.l #0, %a1           | return null pointer               
         bra after_find
         
 
+        DEFWORD "DOC",3,doc,0, "( -- ) Retrieves documentation for the next word in the input stream."
+        bsr word
+        bsr find
+        POP %a0
+        cmp #0, %a0      | null pointer?
+        beq endDoc
+        
+        sub.l #2, %a0
+        move.w (%a0), %d1 | length in d1
 
+        beq endDoc
+        subq.l #4, %a0
 
-        DEFWORD ">CFA", 4, tcfa, 0
+        move.l (%a0), %a0 | address in a0
+
+        PUSH %a0
+        PUSH %d1
+        bsr tell
+        bra cr
+docUnavailableMsg:
+        .ascii "Documentation unavailable."
+        .balign 2
+endDoc:
+        PUSH #docUnavailableMsg
+        PUSH #26
+        bsr telln
+        bra cr
+
+        DEFWORD ">CFA", 4, tcfa, 0, "( addr -- cfaAddr ) Gets the code field address (start of 68k code) for a given word address."
         | header format
         | prev_link (4 bytes)
         | namelen (1 byte)
@@ -1072,13 +1060,13 @@ tcfa_return_addr:
 
 
 
-        DEFWORD "EXECUTE",7,execute,0
+        DEFWORD "EXECUTE",7,execute,0, "( cfa -- ) Jumps to given cfa."
         POP %a0
         jsr (%a0)
         rts
 
 
-        DEFWORD "WORDS",5,words,0
+        DEFWORD "WORDS",5,words,0, "( -- ) Prints a list of all defined words."
         bra words_start
 after_words:    
         rts
@@ -1111,8 +1099,7 @@ words_done:
         bra after_words
 
 
-        DEFWORD "CREATE",6,create,0
-        | creates a new header in dictionary
+        DEFWORD "CREATE",6,create,0, "( strAddr strLen -- ) Creates a new dictionary entry named by string at strAddr starting at CP."
 
         move.l (loc_cp), %a0                    | grab pointer to last entry
         move.l (loc_latest), %a1                | grab next word slot in dictionary
@@ -1138,21 +1125,21 @@ _create_update_cp:
         rts
 
         
-        DEFWORD ",", 1,comma, 0
+        DEFWORD ",", 1,comma, 0, "( a -- ) Writes a longword value to CP, incrementing the address by 4."
         POP %d1
         move.l (loc_cp), %a0                  | get 'cp' ptr
-        move.l %d1, (%a0)+                      | write 32-bit val
+        move.l %d1, (%a0)+                    | write 32-bit val
         move.l %a0, (loc_cp)                  | increment 'cp' by 4
         rts
 
-        DEFWORD "w,",2,wordComma,0              | same as above, but writes a word value
+        DEFWORD "W,",2,wordComma,0, "( a -- ) Writes a word value to CP, incrementing the address by 2." 
         POP %d1
         move.l (loc_cp), %a0
         move.w %d1, (%a0)+
         move.l %a0, (loc_cp)
         rts
 
-        DEFWORD "<JSR>",5,cjsr,0
+        DEFWORD "<JSR>",5,cjsr,0, "( addr -- ) Compiles a JSR instruction jumping control to given longword address. Increments CP by 6"
         | ( addr -- )
         POP %d1
         move.l (loc_cp), %a2
@@ -1162,7 +1149,7 @@ _create_update_cp:
         rts
 
         
-        DEFWORD "[PUSH]",6,compile_push,0
+        DEFWORD "[PUSH]",6,compile_push,0, "( a -- ) Compiles a literal push of longword value a onto the stack. Increments CP by 8."
         | compiles a literal push onto the stack
         | todo, more safety
         PUSH #0x2D00
@@ -1176,19 +1163,17 @@ _create_update_cp:
                 
        
         
-        
-        
-        DEFWORD "[",1,lbrac,0
+        DEFWORD "[",1,lbrac,0, "( -- ) Switches to interpret mode."
         | set state to 0, interpret mode
         move.b #0, (loc_state)
         rts
         
-        DEFWORD "]",1,rbrac,0
+        DEFWORD "]",1,rbrac,0, "( -- ) Switches to compile mode."
         | set state to 1, compile mode
         move.b #1, (loc_state)
         rts
         
-        DEFWORD ":",1,colon,0
+        DEFWORD ":",1,colon,0, "( -- ) Starts a new colon-word definition."
         bsr word
         bsr create
         bsr latest
@@ -1196,12 +1181,12 @@ _create_update_cp:
         bsr hidden
         bra rbrac
 
-        DEFWORD "EXIT",4,exit,0
+        DEFWORD "EXIT",4,exit,0, "( -- ) Exits the current word."
         addq #4, %a7
         jmp (%a7) 
         
         
-        DEFWORD ";",1,semicolon,F_IMMED
+        DEFWORD ";",1,semicolon,F_IMMED, "( -- ) Ends a definition."
         PUSH #0x4E75
         bsr wordComma
         bsr latest
@@ -1209,24 +1194,24 @@ _create_update_cp:
         bsr hidden
         bra lbrac
 
-        DEFWORD "IMMEDIATE",9,immediate,F_IMMED
+        DEFWORD "IMMEDIATE",9,immediate,F_IMMED, "( -- ) Toggles the immediate flag of the last defined word."
         move.l (loc_latest), %a0
         addq.l #4, %a0
         eor.b #F_IMMED, (%a0)
         rts
 
-        DEFWORD "HIDDEN",6,hidden,0
+        DEFWORD "HIDDEN",6,hidden,0, "( a -- ) Toggles the hidden flag of the word at a."
         POP %a0
         addq.l #4, %a0
         eor.b #F_HIDDEN, (%a0)
         rts
 
-        DEFWORD "HIDE",4,hide,0
+        DEFWORD "HIDE",4,hide,0, "( -- ) Toggles the hidden flag of the next word in the input stream."
         bsr word
         bsr find
         bra hidden
         
-        DEFWORD "'",1,tick,0
+        DEFWORD "'",1,tick,0, "( -- cfa ) Gets the cfa of the next word in the input stream."
         bsr word
         bsr find
         bra tcfa
@@ -1236,13 +1221,13 @@ _create_update_cp:
 
 
         
-        DEFWORD "QUIT",4,quit,0
+        DEFWORD "QUIT",4,quit,0, "( -- ) Returns to the toplevel interepreter loop."
         move.l #0xFFFE00, %a7           | reset return stack
         bsr interpret
         bra quit
         
         
-        DEFWORD "INTERPRET",9,interpret,0
+        DEFWORD "INTERPRET",9,interpret,0, "( -- ) Interprets the next word in the input stream."
         | read word
         bsr word                        | ( wordAddr wordLen )
         bsr tdup                        | ( wordAddr wordLen wordAddr wordLen )
@@ -1325,7 +1310,7 @@ interp_parse_error:
         bsr telln
         rts
 
-        DEFWORD "(",1,parenOpen,0
+        DEFWORD "(",1,parenOpen,0, "( -- ) Ignores all input until a ')' is found."
 parenLoop:
         bsr word
         POP %d2
@@ -1337,97 +1322,97 @@ parenLoop:
         rts
 
         | TODO figure out if this is necessary
-        DEFWORD "PAD",3,pad,0
-        move.l (loc_cp), %d1
-        add.l #300, %d1
-        PUSH %d1
-        rts
+|         DEFWORD "PAD",3,pad,0,
+|         move.l (loc_cp), %d1
+|         add.l #300, %d1
+|         PUSH %d1
+|         rts
         
-        DEFWORD "TSAVE",5,task_save_area,0
-        | gets the current task's save area
-        PUSH %a5
-        rts
+|         DEFWORD "TSAVE",5,task_save_area,0
+|         | gets the current task's save area
+|         PUSH %a5
+|         rts
 
-        DEFWORD "TBUFFER",7, terminal_input_buffer,0
-        PUSH %a5
-        add.l #140, %d0
-        rts
+|         DEFWORD "TBUFFER",7, terminal_input_buffer,0
+|         PUSH %a5
+|         add.l #140, %d0
+|         rts
 
-        DEFWORD "TVAR",4, user_variable_area,0
-        PUSH %a5
-        add.l #(140+128),%d0
-        | get user_var_area
+|         DEFWORD "TVAR",4, user_variable_area,0
+|         PUSH %a5
+|         add.l #(140+128),%d0
+|         | get user_var_area
 
-        DEFWORD "SWITCH",6,switch,0
-        | ( task_num )
-        move.l #16, %d1
+|         DEFWORD "SWITCH",6,switch,0
+|         | ( task_num )
+|         move.l #16, %d1
 
-        bsr depth
-        cmp.l %d1, %d0
-        bgt pstack_task_switch_error
+|         bsr depth
+|         cmp.l %d1, %d0
+|         bgt pstack_task_switch_error
 
-        bsr rdepth
-        cmp.l %d1, %d0
-        bgt rstack_task_switch_error 
+|         bsr rdepth
+|         cmp.l %d1, %d0
+|         bgt rstack_task_switch_error 
         
         
-        bsr save_current_task_data   | shouldn't touch the current data stack
-        POP %a5
-        bsr load_current_task_data
-        rts
+|         bsr save_current_task_data   | shouldn't touch the current data stack
+|         POP %a5
+|         bsr load_current_task_data
+|         rts
 
-pstack_task_switch_error_string:     
-        .ascii "Too much data on PSTACK to yield!"
-rstack_task_switch_error_string:     
-        .ascii "Too much data on RSTACK to yield!"
-pstack_task_switch_error:
-        PUSH #pstack_task_switch_error_string
-        PUSH #33
-        bsr telln
-ptse_lp:
-        bra ptse_lp
+| pstack_task_switch_error_string:     
+|         .ascii "Too much data on PSTACK to yield!"
+| rstack_task_switch_error_string:     
+|         .ascii "Too much data on RSTACK to yield!"
+| pstack_task_switch_error:
+|         PUSH #pstack_task_switch_error_string
+|         PUSH #33
+|         bsr telln
+| ptse_lp:
+|         bra ptse_lp
         
-rstack_task_switch_error:
-        PUSH #rstack_task_switch_error_string
-        PUSH #33
-        bsr telln
-rtse_lp:
-        bra rtse_lp 
+| rstack_task_switch_error:
+|         PUSH #rstack_task_switch_error_string
+|         PUSH #33
+|         bsr telln
+| rtse_lp:
+|         bra rtse_lp 
         
-save_current_task_data:
-        | save data for old task
-        | %a5 points to task save area
-        move.l %a5, %a4                 | temp
-        | save registers
-        movem.l %d0/%a6/%a7, (%a4)
-        | save top 16 elements of return stack
-        | and top 16 elements of param stack
-        add.l #12, %a4
+| save_current_task_data:
+|         | save data for old task
+|         | %a5 points to task save area
+|         move.l %a5, %a4                 | temp
+|         | save registers
+|         movem.l %d0/%a6/%a7, (%a4)
+|         | save top 16 elements of return stack
+|         | and top 16 elements of param stack
+|         add.l #12, %a4
         
-        moveq.l #3, %d1
-        | needs to handle less than 16 elements
-copy_rstack_loop:               
-        move.l (%a7)+, (%a4)+
-        move.l (%a7)+, (%a4)+
-        move.l (%a7)+, (%a4)+
-        move.l (%a7)+, (%a4)+
-        dbra %d1, copy_rstack_loop
+|         moveq.l #3, %d1
+|         | needs to handle less than 16 elements
+| copy_rstack_loop:               
+|         move.l (%a7)+, (%a4)+
+|         move.l (%a7)+, (%a4)+
+|         move.l (%a7)+, (%a4)+
+|         move.l (%a7)+, (%a4)+
+|         dbra %d1, copy_rstack_loop
 
-        moveq.l #3, %d1
-copy_pstack_loop:
-        | needs to handle less than 16 elements 
-        move.l %d0, (%a4)+
-        move.l (%a6)+, %d0
-        move.l %d0, (%a4)+
-        move.l (%a6)+, %d0
-        move.l %d0, (%a4)+
-        move.l (%a6)+, %d0
-        move.l %d0, (%a4)+
-        move.l (%a6)+, %d0
-        dbra %d1, copy_pstack_loop
+|         moveq.l #3, %d1
+| copy_pstack_loop:
+|         | needs to handle less than 16 elements 
+|         move.l %d0, (%a4)+
+|         move.l (%a6)+, %d0
+|         move.l %d0, (%a4)+
+|         move.l (%a6)+, %d0
+|         move.l %d0, (%a4)+
+|         move.l (%a6)+, %d0
+|         move.l %d0, (%a4)+
+|         move.l (%a6)+, %d0
+|         dbra %d1, copy_pstack_loop
 
-        | reset return stack to base
-        move.l %a7, RSTACK_END
+|         | reset return stack to base
+|         move.l %a7, RSTACK_END
 
 load_current_task_data:
         | load registers
