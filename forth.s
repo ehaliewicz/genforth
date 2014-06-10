@@ -143,7 +143,7 @@ main:
         DEFCONST "SS0",3,sszero, 0, #shadow_stack, "Location of the top of the shadow stack (grows downward)."
         
         | hundredths of versions
-        DEFCONST "VERSION", 7, version, 0, #0x00000001,"Current version."
+        DEFCONST "VERSION", 7, version, 0, #0x00000002,"Current version."
         DEFCONST "R0", 2, rzero, 0, #RSTACK_END,"Top of return stack. Uses the native stack so grows downward."
         DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED,"Flag for marking words as immediate."
         DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN,"Flag for marking words as hidden."
@@ -490,7 +490,7 @@ push_false:
         bge push_true
         bra push_false
     
-        DEFWORD "BYE",3,bye,0, "Exits interpreter."
+        DEFWORD "BYE",3,bye,0, "( -- ) Exits interpreter."
         PUSH #'E'
         PUSH #'Y'
         PUSH #'B'
@@ -500,7 +500,7 @@ push_false:
 bye_loop:        
         bra bye_loop
 
-        DEFWORD "RESTART",7,restart,0, "Restarts system."
+        DEFWORD "RESTART",7,restart,0, "( -- ) Restarts system."
         PUSH #SYS_reset
         bra ccall1
         
