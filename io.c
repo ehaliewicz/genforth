@@ -397,7 +397,8 @@ void get_line_of_input() {
   for(int i = 0; i < WIDTH_TILES-1; i++) {
     buffer[i] = ' ';
   }
- 
+
+  
 
   //char tmpBuffer[WIDTH_TILES+1];
   for(int i = 0; i < WIDTH_TILES; i++) {

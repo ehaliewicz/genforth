@@ -62,8 +62,8 @@ halt_loop:
         .ascii "\doc"
         .set DOC_LEN, .-DOC_START
         .balign 2
-        dc.l DOC_START
         dc.w DOC_LEN
+        dc.l DOC_START
         dc.l LAST_WORD
         .set LAST_WORD, .-4
         .byte \nameLen+\flags
@@ -201,8 +201,11 @@ shadow_stack:
         
         .balign 2        
         | word buffer
+curWordSlot:
+        dc.l wordBuffer
 wordBuffer:     
-        .space 38, ' '
+        .space 256, ' '
+wordBufTop:
         
 
         | ptr in key buffer
@@ -210,6 +213,7 @@ curkey:
         dc.l buffer
         | ptr to end of input in key buffer
 bufftop:
+
         dc.l buffer
         .balign 2
         | input buffer
@@ -801,12 +805,16 @@ get_new_input:
         
         
         DEFWORD "WORD",4,word,0, "( -- wordAddr wordLen ) Reads a word from input."
-        moveq.l #0, %d1                 | length in d1
         bra get_first_char
 after_get_word:
-        move.l #wordBuffer, %d0         | get rid of space char
+        | start address in a0
+        | length in d1
+        | move.l #wordBuffer, %d0         | get rid of space char       
+        move.l %a0, (curWordSlot)
+        move.l %a2, %d0
         PUSH %d1
         rts
+
         
 get_first_char:
                                         | get key on top of stack
@@ -817,7 +825,13 @@ get_first_char:
         bra get_first_char
 
 start_store_chars:      
-        move.l #wordBuffer, %a0
+        | #curWordSlot
+        | #wordBuffer
+        move.l (curWordSlot), %a0
+        move.l %a0, %a2                 | start of word
+        move.l #wordBufTop, %a1
+        cmp.l %a0, %a1
+        beq flush_word_buffer
         moveq.l #0, %d1
 store_chars:
 
@@ -827,15 +841,21 @@ store_chars:
         addq.b #1, %d1
                 
         RPUSH %a0
+        RPUSH %a2
         RPUSH %d1
         bsr key                        | get next char
         RPOP %d1
+        RPOP %a2
         RPOP %a0
         cmpi.b #' ', %d0
                                         | if not space keep grabbing chars
         bne store_chars
                                         | if found space return address of character and number of characters
         bra after_get_word
+
+flush_word_buffer:
+        move.l #wordBuffer, (curWordSlot)
+        bra start_store_chars
         
 
         DEFWORD "TELL",4,tell,0, "( a b -- ) Prints string at a with length b."
@@ -1017,15 +1037,16 @@ entry_not_found:
         cmp #0, %a0      | null pointer?
         beq endDoc
         
-        sub.l #2, %a0
-        move.w (%a0), %d1 | length in d1
-
+        sub.l #4, %a0
+        move.w (%a0), %a1 | address in a1
+        
         beq endDoc
-        subq.l #4, %a0
+        subq.l #2, %a0
 
-        move.l (%a0), %a0 | address in a0
-
-        PUSH %a0
+        move.l (%a0), %d1 | address in d1
+        beq endDoc
+        
+        PUSH %a1
         PUSH %d1
         bsr tell
         bra cr
@@ -1106,6 +1127,11 @@ words_done:
         POP %d1                                 | get name length
         POP %a2                                 | get name address
 
+        | write empty doc fields
+        move.w #0, (%a0)+                       | empty doc length
+        move.l #0, (%a0)+                       | null docstring pointer
+        
+        
         move.l %a0, (loc_latest)                | update 'latest' pointer
         move.l %a1, (%a0)+                      | write link pointer
         move.b %d1, (%a0)+                      | write name length
