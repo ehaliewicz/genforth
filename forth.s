@@ -153,13 +153,18 @@ main:
         DEFCONST "SS0",3,sszero, 0, #shadow_stack | shadow stack
         
         | hundredths of versions ;)
-        DEFCONST "VERSION", 7, version, 0, #001
+        DEFCONST "VERSION", 7, version, 0, #0x00000001
         DEFCONST "R0", 2, rzero, 0, #RSTACK_END
         DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED
         DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN
         DEFCONST "F_LENMASK", 9, flenmask, 0, #F_LENMASK
 
         
+welcome_message:
+        .ascii "Mega Forth"
+version_message:        
+        .ascii "Version: "
+        .balign 2
 ram_entry_point:
         | initialize I/O stuff (in io.c)
         jsr initIO
@@ -176,6 +181,17 @@ ram_entry_point:
 
         moveq.l #0, %d0 
 
+
+        
+        PUSH #welcome_message
+        PUSH #10
+        bsr telln
+        bsr cr
+        PUSH #version_message
+        PUSH #9
+        bsr telln
+        bsr version
+        bsr dot
         bra quit
         
         .balign 4
