@@ -1325,6 +1325,16 @@ interp_parse_error:
         bsr telln
         rts
 
+        DEFWORD "(",1,parenOpen,0
+parenLoop:
+        bsr word
+        POP %d2
+        POP %a0  | trash word
+        cmp.b #1, %d2
+        bne parenLoop
+        cmp.b #')', (%a0)
+        bne parenLoop
+        rts
 
         | TODO figure out if this is necessary
         DEFWORD "PAD",3,pad,0
