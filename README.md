@@ -8,7 +8,8 @@ Currently, it requires the SGDK and only builds on Windows.
 
 
 
-# Controls (6-button isn't required but helps): 
+Controls (6-button isn't required but helps): 
+----------------------------------------------
 * A - Set character at cursor to A 
 * B - Delete character in front of cursor 
 * C - Insert space at cursor 
