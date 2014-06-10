@@ -1337,15 +1337,33 @@ interp_parse_error:
         rts
 
         DEFWORD "(",1,parenOpen,F_IMMED, "( -- ) Ignores all input until a ')' is found."
+        move.l #1, %d1
 parenLoop:
+        RPUSH %d1        
         bsr word
+        RPOP %d1
         POP %d2
         POP %a0  | trash word
+
         cmp.b #1, %d2
         bne parenLoop
+        
+        cmp.b #40, (%a0)
+        beq incParen
+        
+        
         cmp.b #41, (%a0)
+        beq decParen
+        bra parenLoop
+
+decParen:       
+        subq #1, %d1
         bne parenLoop
-        rts
+        rts     
+incParen:
+        addq.l #1, %d1
+        bra parenLoop
+        
 
         | TODO figure out if this is necessary
 |         DEFWORD "PAD",3,pad,0,
