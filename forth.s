@@ -142,7 +142,7 @@ main:
         DEFCONST "SS0",3,sszero, 0, #shadow_stack, "Location of the top of the shadow stack (grows downward)."
         
         | hundredths of versions
-        DEFCONST "VERSION", 7, version, 0, #0x00000002,"Current version."
+        DEFCONST "VERSION", 7, version, 0, #03,"Current version."
         DEFCONST "R0", 2, rzero, 0, #RSTACK_END,"Top of return stack. Uses the native stack so grows downward."
         DEFCONST "F_IMMED", 7, fimmed, 0, #F_IMMED,"Flag for marking words as immediate."
         DEFCONST "F_HIDDEN", 8, fhidden, 0, #F_HIDDEN,"Flag for marking words as hidden."
@@ -180,6 +180,16 @@ ram_entry_point:
         PUSH #9
         bsr telln
         bsr version
+        | divu #10, %d0
+        | andi.l #0x0000FFFF, %d0
+        | bsr dot
+        PUSH #'.'
+        bsr emit
+        bsr version
+        divu #10, %d0
+        andi.l #0xFFFF0000, %d0
+        asr.l #8, %d0
+        asr.l #8, %d0
         bsr dot
         bra quit
         
@@ -636,7 +646,8 @@ dotPrintLoop:
         dbeq %d1, dotPrintLoop
         PUSH #0x20
         bra emit
-    
+        rts
+        
         DEFWORD "DEPTH",5,depth,0, "( -- depth ) Returns current depth of stack."
         | ( -- depth )
         move.l %a6, %d1

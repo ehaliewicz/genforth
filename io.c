@@ -19,6 +19,7 @@ static u16 oskPlan;
 static int displayingOsk = 0;
 static u16 inputFlags;
 static u16 oskFlags;
+static int initialized = 0;
 
 
 
@@ -26,6 +27,9 @@ void drawOsk();
 void initCursorSprite();
 
 void initIO() {
+  initialized = 0;
+  //oskX = 0;
+  //oskY = 0;
   inputPlan = APLAN;
   inputFlags = TILE_ATTR(PAL0,0,0,0);
   
@@ -174,8 +178,8 @@ u32* prefixMatch(char* word, u32 wordLen) {
 
 }
 
-int oskX = 0;
-int oskY = 0;
+static int oskX = 0;
+static int oskY = 0;
 // 4x4 is base tile size
 const u32 spriteTiles[4*8] =
   {
@@ -415,73 +419,13 @@ void handle_right(u16 state) {
   }
 }
 
-/* void handleOskInput(u16 state, u16 diff) { */
-  
-/*   if(diff & BUTTON_Y) { */
-/*     clearOsk(); */
-/*     displayingOsk = 0; */
-/*     return; */
-/*   } */
-  
-/*   if(diff & BUTTON_A) { */
-/*     handle_a(); */
-/*   } */
-
-/*   if(diff & BUTTON_B) { */
-/*     handle_b(); */
-/*   } */
-  
-/*   if(diff & BUTTON_C) { */
-/*     // shift characters starting at buffer[ptr] right */
-/*     // insert space in buffer[ptr] */
-/*     handle_c(); */
-/*   } */
-  
-/*   // wrap-around */
-/*   if(diff & BUTTON_UP) { */
-/*     handle_up(); */
-/*   } */
-
-  
-/*   if(diff & BUTTON_DOWN) { */
-/*     handle_down(); */
-/*   } */
-  
-/*   if(diff & BUTTON_LEFT) { */
-/*     if(state & BUTTON_Z) { */
-/*       inputLeft(); */
-/*     } else { */
-/*       oskX = (oskX-1); */
-/*       if(oskX < 0) { */
-/*         oskX = 18; */
-/*       } */
-/*     } */
-/*   } */
-
-/*   if(diff & BUTTON_RIGHT) { */
-/*     if(state & BUTTON_Z) { */
-/*       inputRight(); */
-/*     } else { */
-/*       oskX = (oskX+1) % 19; */
-/*     } */
-/*   } */
-  
-/* } */
-
- 
-
-
-static int initialized = 0;
-
-
-
 // when on-screen keyboard is running
 // d-pad selects keys, and doesn't move the cursor
 //
 void get_line_of_input() {
   
   if(initialized == 1) {
-    printStrn("ok.", 3);
+    printStrn(" ok.", 4);
   } else {
     initialized = 1;
   }
@@ -583,8 +527,7 @@ void get_line_of_input() {
         displayingOsk = 1;
       }
     }
-   
-  end_loop_iter:
+    
     VDP_clearTextLine(printRow+1);
     VDP_drawTextBG(inputPlan, &tmpBuffer[0], inputFlags, 1, printRow);
     
